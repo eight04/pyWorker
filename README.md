@@ -4,6 +4,11 @@ A threading framework written in python. Help you build threaded app.
 
 This module was originally included in eight04/ComicCrawler.
 
+Known issues
+------------
+* If there is an error in `worker.sync`, the error message will be printed
+  twice, once in the child thread and once in the parent.
+
 Usage
 -----
 Use function as target.
