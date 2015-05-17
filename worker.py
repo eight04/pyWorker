@@ -397,4 +397,3 @@ def global_cleanup():
 		thread.join()
 		
 global_pool = set()
-atexit.register(global_cleanup)

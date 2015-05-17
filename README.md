@@ -7,7 +7,7 @@ This module was originally included in eight04/ComicCrawler.
 Usage
 -----
 Use function as target.
-```
+```python
 #! python3
 
 from worker import Worker
@@ -45,7 +45,7 @@ while True:
 ```
 
 Parent, child thread.
-```
+```python
 #! python3
 
 from worker import Worker
@@ -86,7 +86,7 @@ while True:
 ```
 
 Async task.
-```
+```python
 #! python3
 
 from worker import Worker
@@ -104,7 +104,7 @@ print(lw_thread.get())
 ```
 
 Async + parent/child.
-```
+```python
 #! python3
 
 from worker import Worker
@@ -149,7 +149,7 @@ while True:
 ```
 
 Message
-```
+```python
 #! python3
 
 from worker import Worker
@@ -231,4 +231,20 @@ while True:
 		w_thread.stop()
 		w_thread.join()
 		break
+```
+
+Clean up threads on exit
+```python
+#! python3
+
+from worker import Worker, global_cleanup
+
+def loop(thread):
+	thread.message_loop()
+	
+# if you doesn't hold the reference, the thread become daemon thread.
+Worker(loop).start()
+
+# pyWorker provide a cleanup function to stop all threads.
+global_cleanup()
 ```
