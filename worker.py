@@ -51,7 +51,7 @@ class Async:
 class Worker:
 	"""Wrap Thread class. 
 	
-	Use queued message to communication between threads.
+	Use queued message to communicate between threads.
 	"""
 	
 	def __init__(self, target):
