@@ -79,7 +79,7 @@ class Worker:
 				flag="BUBBLE" if ancestor else None)
 	
 	def broadcast(self, message, param=None):
-		"""Shorthand to broadcast message"""
+		"""Broadcast message"""
 		for child in self.children:
 			child.message(message, param, sender=self, flag="BROADCAST")
 	
@@ -107,9 +107,9 @@ class Worker:
 				child._message(message)
 
 	def listen(self, message):
-		"""Listen to a specific message.
+		"""This is a decorator. Listen to a specific message.
 		
-		The arguments of callback function should always be following forms:
+		The arguments of callback function should always be in following forms:
 		  def callback():
 		  def callback(sender)
 		  def callback(<param>)
