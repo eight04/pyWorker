@@ -1,11 +1,13 @@
 pyWorker
 ========
-A threading framework in python.
+A threading framework written in python. Help you build threaded app.
+
+This module was originally included in eight04/ComicCrawler.
 
 Usage
 -----
 Use function as target.
-```
+```python
 from worker import Worker
 
 count = 1
@@ -41,7 +43,7 @@ while True:
 ```
 
 Parent, child thread.
-```
+```python
 p_thread = None
 c_thread = None
 
@@ -78,7 +80,7 @@ while True:
 ```
 
 Async task.
-```
+```python
 def long_work(t):
 	sleep(t)
 	return "Finished in {} second(s)".format(t)
@@ -91,7 +93,7 @@ print(lw_thread.get())
 ```
 
 Async + parent/child.
-```
+```python
 p_thread = None
 c_thread = None
 
@@ -130,7 +132,7 @@ while True:
 ```
 
 Message
-```
+```python
 def work(thread):
 	@thread.listen("hello")
 	def _():
@@ -161,7 +163,7 @@ whil True:
 ```
 
 Message + parent/child
-```
+```python
 def odd_man(thread):
 
 	@thread.listen("hey")
