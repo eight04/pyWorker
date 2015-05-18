@@ -25,7 +25,9 @@ class Message:
 		return self.que.get()
 		
 	def put(self, value):
-		"""Put returned value"""
+		"""Put returned value. This method used to be called by
+		thread.process_message.
+		"""
 		self.que.put(value)
 		
 class Async:
@@ -40,6 +42,7 @@ class Async:
 		
 		@thread.listen("WORKER_DONE")
 		def _(value):
+			"""Listen to WORKER_DONE"""
 			self.que.put(value)
 			self.done = True
 			self.error = thread.error
@@ -85,7 +88,7 @@ class Worker:
 			child.message(message, param, sender=self, flag="BROADCAST")
 	
 	def message(self, message, param=None, sender=None, flag=None):
-		"""Create message"""
+		"""Create message object"""
 		ms = Message(message, param, sender, flag)
 		self._message(ms)
 		return ms
@@ -111,17 +114,19 @@ class Worker:
 		"""This is a decorator. Listen to a specific message.
 		
 		The arguments of callback function should always be in following forms:
-		  def callback():
-		  def callback(sender)
-		  def callback(<param>)
-		  def callback(<param>, sender)
+		  def callback(): pass
+		  def callback(sender): pass
+		  def callback(<param>): pass
+		  def callback(<param>, sender): pass
+		  
+		Check the source for detail.
 		"""
 
 		if message not in self.listeners:
 			self.listeners[message] = []
 			
 		def listen_message(callback):
-			"""Cache callback"""
+			"""Decorate callback"""
 			sign = inspect.signature(callback)
 			count = len(sign.parameters)
 			
@@ -145,7 +150,7 @@ class Worker:
 		return listen_message
 		
 	def process_message(self, message):
-		"""Process message then transfer"""
+		"""Process and transfer message"""
 		
 		ret = None
 		if message.message in self.listeners:
@@ -175,7 +180,7 @@ class Worker:
 			message = self.message_que.get_nowait()
 			self.process_message(message)
 			
-	def wait_message(self, message, sender=None, sync=False):
+	def wait_message(self, message, sender=None, cache=False):
 		"""Wait for specify message"""
 		
 		while True:
@@ -193,13 +198,13 @@ class Worker:
 			if ms.message == message:
 				if sender is None or sender == ms.sender:
 					return ms.param
-			elif sync:
+			elif cache:
 				self.message_cache.put(ms)
 
 	def wait(self, timeout=None):
-		"""Wait some time."""
+		"""Wait timeout"""
 
-		# Get any message
+		# Wait for any message
 		if timeout is None:
 			try:
 				message = self.message_cache.get_nowait()
@@ -243,18 +248,22 @@ class Worker:
 		def _():
 			if not self.is_waiting:
 				self.is_waiting = True
-				self.wait_message("RESUME_THREAD", sync=True)
+				self.wait_message("RESUME_THREAD", cache=True)
 				self.is_waiting = False
 
+		# add to global_pool if no parent
 		if not self.parent:
 			global_pool.add(self)
 			
+		# init status
 		self.running = True
 		self.bubble("CHILD_THREAD_START", ancestor=False)
-		
 		returned_value = None
+		
+		# pass thread instance
 		if self.pass_instance:
 			kwargs["thread"] = self
+			
 		try:
 			returned_value = self.target(*args, **kwargs)
 		except WorkerExit:
@@ -300,10 +309,8 @@ class Worker:
 		
 		return returned_value
 			
-	def count_child(self, running=True):
-		if not running:
-			return len(self.children)
-			
+	def count_child(self):
+		"""Count child threads"""
 		count = 0
 		for child in self.children:
 			if child.running:
@@ -311,7 +318,7 @@ class Worker:
 		return count
 		
 	def start(self, *args, **kwargs):
-		"""call this method and self.worker will run in new thread"""
+		"""Start thread"""
 		if self.running:
 			return
 			
@@ -321,7 +328,7 @@ class Worker:
 		return self
 		
 	def stop(self):
-		"""Stop self"""
+		"""Stop thread"""
 		if self.running:
 			self.message("STOP_THREAD")
 
@@ -346,17 +353,27 @@ class Worker:
 		return self
 		
 	def create_child(self, *args, **kwargs):
-		"""Create worker and add to children"""
+		"""Create child thread"""
 		child = Worker(*args, **kwargs)
 		child.parent = self
 		return child
 		
 	def async(*args, **kwargs):
-		"""Create async.
+		"""Create async task.
 		
-		This method can be called on Worker class or worker instance.
-		  worker.async(func, p0, p1...)
-		  Worker.async(func, p0, p1...)
+		This method can be called on Worker class or thread instance.
+		  async = Worker.async(func, p0, p1...)
+		  
+		  # Do other stuff here...
+		  
+		  async.get()
+		  
+		When called on thread instance, the func runs as child thread.
+		  async = thread.async(func, p0, p1...)
+		  
+		  # Do other stuff here...
+		  
+		  returned_value = thread.await(async)
 		"""
 		if isinstance(args[0], Worker):
 			thread = args[0].create_child(args[1], pass_instance=False)
@@ -391,6 +408,7 @@ class Worker:
 		return self.running
 		
 def global_cleanup():
+	"""Clean up threads in global_pool"""
 	pool = global_pool.copy()
 	for thread in pool:
 		thread.stop()
