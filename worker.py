@@ -54,12 +54,13 @@ class Worker:
 	Use queued message to communicate between threads.
 	"""
 	
-	def __init__(self, target):
+	def __init__(self, target, pass_instance=True):
 		"""init"""
 		
 		self.target = target
 		self.name = str(target)
 		self.parent = None
+		self.pass_instance = pass_instance
 		
 		self.thread = None
 		self.message_que = queue.Queue()
@@ -252,11 +253,10 @@ class Worker:
 		self.bubble("CHILD_THREAD_START", ancestor=False)
 		
 		returned_value = None
+		if self.pass_instance:
+			kwargs["thread"] = self
 		try:
-			if args or kwargs:
-				returned_value = self.target(*args, **kwargs)
-			else:
-				returned_value = self.target(self)
+			returned_value = self.target(*args, **kwargs)
 		except WorkerExit:
 			pass
 		except Exception as er:
@@ -345,9 +345,9 @@ class Worker:
 		self.thread.join()
 		return self
 		
-	def create_child(self, target):
+	def create_child(self, *args, **kwargs):
 		"""Create worker and add to children"""
-		child = Worker(target)
+		child = Worker(*args, **kwargs)
 		child.parent = self
 		return child
 		
@@ -359,10 +359,10 @@ class Worker:
 		  Worker.async(func, p0, p1...)
 		"""
 		if isinstance(args[0], Worker):
-			thread = args[0].create_child(args[1])
+			thread = args[0].create_child(args[1], pass_instance=False)
 			args = args[2:]
 		else:
-			thread = Worker(args[0])
+			thread = Worker(args[0], pass_instance=False)
 			args = args[1:]
 		thread.start(*args, **kwargs)
 		return Async(thread)
