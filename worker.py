@@ -280,8 +280,9 @@ class Worker:
 		except WorkerExit:
 			pass
 		except Exception as er:
-			print("\nSomething went wrong in {},\n{}".format(
-				self.name, traceback.format_exc()))
+			if self.print_error:
+				print("\nSomething went wrong in {},\n{}".format(
+					self.name, traceback.format_exc()))
 			
 			if self.running:
 				self.error = er
