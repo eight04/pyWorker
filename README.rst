@@ -13,6 +13,11 @@ Features
 * Create async tasks.
 * Communicate between threads with Message.
 
+Install
+-------
+::
+	pip install pythreadworker
+
 Usage
 -----
 Use function as target::
