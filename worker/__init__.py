@@ -5,6 +5,8 @@
 A threaded worker, implemented with message queue and parent/child pattern.
 """
 
+__version__ = "0.1.1"
+
 import queue, threading, traceback, time, inspect, atexit
 
 class WorkerExit(BaseException): pass
