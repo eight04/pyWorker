@@ -16,6 +16,7 @@ Features
 Install
 -------
 ::
+
 	pip install pythreadworker
 
 Usage
