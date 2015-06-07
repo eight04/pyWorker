@@ -1,6 +1,6 @@
 #! python3
 
-from worker import Worker, global_cleanup
+from worker import Worker, global_cleanup, UserWorker
 from time import sleep
 
 import inspect
@@ -147,3 +147,29 @@ global_cleanup()
 
 assert l_thread.is_running() is False
 	
+
+
+print("Test UserWorker")
+
+test_done = False
+
+class Child(UserWorker):
+	def test(self):
+		self.bubble("test")
+
+class Parent(UserWorker):
+	def worker(self):
+	
+		@self.listen("test")
+		def dummy():
+			global test_done
+			test_done = True
+			
+		child = self.create_child(Child)
+		child.start()
+		
+		child.test()
+		
+Parent().start().join()
+
+assert test_done is True
