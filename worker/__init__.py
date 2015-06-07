@@ -565,6 +565,6 @@ global_pool = set()
 reserved_args = set()
 
 # Init reserver_args
-for name, param in inspect.signature(Worker.__init__).parameters:
-	if param.default != param.empty
+for name, param in inspect.signature(Worker.__init__).parameters.items():
+	if param.default != param.empty:
 		reserved_args.add(name)
