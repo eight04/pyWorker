@@ -5,7 +5,7 @@
 A threaded worker, implemented with message queue and parent/child pattern.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 import queue, threading, traceback, time, inspect, atexit
 
@@ -402,9 +402,22 @@ class Worker:
 		
 	def create_child(self, *args, **kwargs):
 		"""Create child thread"""
-		child = Worker(*args, **kwargs)
-		child.parent = self
+		if issubclass(args[0], UserWorker):
+			child = UserWorker(*args[1:], **kwargs)
+		else:
+			child = Worker(*args, **kwargs)
+		
+		self.add_child(child)
+		
 		return child
+		
+	def add_child(self, child):
+		"""Add child thread"""
+		if isinstance(child, UserWorker):
+			child.thread.parent = self
+		else:
+			child.parent = self
+		return self
 		
 	def async(*args, **kwargs):
 		"""Create async task.
@@ -461,6 +474,71 @@ class Worker:
 	def is_running(self):
 		"""Get worker state"""
 		return self.running
+		
+class UserWorker:
+	"""Wrap Worker object"""
+	
+	def __init__(self):
+		"""Create worker"""
+		self.thread = Worker(self.worker, pass_instance=False)
+		
+	def bubble(self, *args, **kwargs):
+		self.thread.bubble(*args, **kwargs)
+		
+	def broadcast(self, *args, **kwargs):
+		self.thread.broadcast(*args, **kwargs)
+		
+	def message(self, *args, **kwargs):
+		self.thread.message(*args, **kwargs)
+		
+	def listen(self, *args, **kwargs):
+		self.thread.listen(*args, **kwargs)
+		
+	def message_loop(self, *args, **kwargs):
+		self.thread.message_loop(*args, **kwargs)
+		
+	def wait_message(self, *args, **kwargs):
+		self.thread.wait_message(*args, **kwargs)
+		
+	def wait(self, *args, **kwargs):
+		self.thread.wait(*args, **kwargs)
+		
+	def worker(self):
+		"""Overwrite"""
+		pass
+		
+	def start(self, *args, **kwargs):
+		self.thread.start(*args, **kwargs)
+		
+	def stop(self, *args, **kwargs):
+		self.thread.stop(*args, **kwargs)
+		
+	def pause(self, *args, **kwargs):
+		self.thread.pause(*args, **kwargs)
+		
+	def resume(self, *args, **kwargs):
+		self.thread.resume(*args, **kwargs)
+		
+	def join(self, *args, **kwargs):
+		self.thread.join(*args, **kwargs)
+		
+	def create_child(self, *args, **kwargs):
+		self.thread.create_child(*args, **kwargs)
+		
+	def add_child(self, *args, **kwargs):
+		self.thread.add_child(*args, **kwargs)
+		
+	def async(self, *args, **kwargs):
+		self.thread.async(*args, **kwargs)
+		
+	def await(self, *args, **kwargs):
+		self.thread.await(*args, **kwargs)
+		
+	def sync(self, *args, **kwargs):
+		self.thread.sync(*args, **kwargs)
+		
+	def is_running(self, *args, **kwargs):
+		self.thread.is_running(*args, **kwargs)
 		
 def global_cleanup():
 	"""Clean up threads in global_pool"""
