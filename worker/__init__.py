@@ -5,7 +5,7 @@
 A threaded worker, implemented with message queue and parent/child pattern.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 import queue, threading, traceback, time, inspect, atexit
 
@@ -438,19 +438,25 @@ class Worker:
 		  
 		  returned_value = thread.await(async)
 		"""
-		init_args = {}
-		for key in ["log_waiting", "log_message", "print_error"]:
-			if key in kwargs:
-				init_args[key] = kwargs[key]
-				del kwargs[key]
+		
+		global reserved_args
+		
+		init_args = {
+			"pass_instance": False
+		}
+		
+		for key in (reserved_args & set(kwargs)):
+			init_args[key] = kwargs[key]
+			del kwargs[key]
 				
 		if isinstance(args[0], Worker):
-			thread = args[0].create_child(args[1], pass_instance=False,
-				**init_args)
+			thread = args[0].create_child(args[1], **init_args)
 			args = args[2:]
+			
 		else:
-			thread = Worker(args[0], pass_instance=False, **init_args)
+			thread = Worker(args[0], **init_args)
 			args = args[1:]
+			
 		thread.start(*args, **kwargs)
 		return Async(thread)
 		
@@ -556,3 +562,9 @@ def global_cleanup():
 		thread.join()
 		
 global_pool = set()
+reserved_args = set()
+
+# Init reserver_args
+for name, param in inspect.signature(Worker.__init__).parameters:
+	if param.default != param.empty
+		reserved_args.add(name)
