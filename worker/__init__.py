@@ -402,10 +402,13 @@ class Worker:
 		
 	def create_child(self, *args, **kwargs):
 		"""Create child thread"""
-		if issubclass(args[0], UserWorker):
+		
+		if callable(args[0]):
+			child = Worker(*args, **kwargs)
+		elif issubclass(args[0], UserWorker):
 			child = UserWorker(*args[1:], **kwargs)
 		else:
-			child = Worker(*args, **kwargs)
+			raise Exception("child must be callable or subclass of UserWorker")
 		
 		self.add_child(child)
 		
