@@ -5,7 +5,7 @@
 A threaded worker, implemented with message queue and parent/child pattern.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 import queue, threading, traceback, time, inspect, atexit
 
@@ -360,6 +360,13 @@ class Worker:
 		
 		self.running = False
 		
+	def run(self, *args, **kwargs):
+		"""Start worker with current thread"""
+		if not self.running:
+			self.init()
+			self.worker(*args, **kwargs)
+		return self
+		
 	def start(self, *args, **kwargs):
 		"""Start thread"""
 		if not self.running:				
@@ -505,6 +512,9 @@ class UserWorker:
 	def message_loop(self, *args, **kwargs):
 		self.thread.message_loop(*args, **kwargs)
 		
+	def cleanup(self, *args, **kwargs):
+		self.thread.cleanup(*args, **kwargs)
+		
 	def wait_message(self, *args, **kwargs):
 		return self.thread.wait_message(*args, **kwargs)
 		
@@ -514,6 +524,10 @@ class UserWorker:
 	def worker(self):
 		"""Overwrite"""
 		pass
+		
+	def run(self, *args, **kwargs):
+		self.thread.run(*args, **kwargs)
+		return self
 		
 	def start(self, *args, **kwargs):
 		self.thread.start(*args, **kwargs)
