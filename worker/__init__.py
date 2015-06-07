@@ -362,13 +362,12 @@ class Worker:
 		
 	def start(self, *args, **kwargs):
 		"""Start thread"""
-		if self.running:
-			return self
+		if not self.running:				
+			self.init()
+			self.thread = threading.Thread(target=self.worker, args=args,
+				kwargs=kwargs)
+			self.thread.start()
 			
-		self.init()
-		self.thread = threading.Thread(target=self.worker, args=args,
-			kwargs=kwargs)
-		self.thread.start()
 		return self
 		
 	def stop(self):
@@ -492,16 +491,16 @@ class UserWorker:
 		self.thread.broadcast(*args, **kwargs)
 		
 	def message(self, *args, **kwargs):
-		self.thread.message(*args, **kwargs)
+		return self.thread.message(*args, **kwargs)
 		
 	def listen(self, *args, **kwargs):
-		self.thread.listen(*args, **kwargs)
+		return self.thread.listen(*args, **kwargs)
 		
 	def message_loop(self, *args, **kwargs):
 		self.thread.message_loop(*args, **kwargs)
 		
 	def wait_message(self, *args, **kwargs):
-		self.thread.wait_message(*args, **kwargs)
+		return self.thread.wait_message(*args, **kwargs)
 		
 	def wait(self, *args, **kwargs):
 		self.thread.wait(*args, **kwargs)
@@ -512,36 +511,42 @@ class UserWorker:
 		
 	def start(self, *args, **kwargs):
 		self.thread.start(*args, **kwargs)
+		return self
 		
 	def stop(self, *args, **kwargs):
 		self.thread.stop(*args, **kwargs)
+		return self
 		
 	def pause(self, *args, **kwargs):
 		self.thread.pause(*args, **kwargs)
+		return self
 		
 	def resume(self, *args, **kwargs):
 		self.thread.resume(*args, **kwargs)
+		return self
 		
 	def join(self, *args, **kwargs):
 		self.thread.join(*args, **kwargs)
+		return self
 		
 	def create_child(self, *args, **kwargs):
-		self.thread.create_child(*args, **kwargs)
+		return self.thread.create_child(*args, **kwargs)
 		
 	def add_child(self, *args, **kwargs):
 		self.thread.add_child(*args, **kwargs)
+		return self
 		
 	def async(self, *args, **kwargs):
-		self.thread.async(*args, **kwargs)
+		return self.thread.async(*args, **kwargs)
 		
 	def await(self, *args, **kwargs):
-		self.thread.await(*args, **kwargs)
+		return self.thread.await(*args, **kwargs)
 		
 	def sync(self, *args, **kwargs):
-		self.thread.sync(*args, **kwargs)
+		return self.thread.sync(*args, **kwargs)
 		
 	def is_running(self, *args, **kwargs):
-		self.thread.is_running(*args, **kwargs)
+		return self.thread.is_running(*args, **kwargs)
 		
 def global_cleanup():
 	"""Clean up threads in global_pool"""
