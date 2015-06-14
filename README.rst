@@ -34,25 +34,25 @@ Use function as target::
 		while True:
 			count += 1
 			thread.wait(1)
-			
+
 	ic = Worker(increaser)
 	ic.start()
 
 	while True:
 		command = input("print|pause|resume|stop|exit: ")
-		
+
 		if command == "print":
 			print(count)
-			
+
 		if command == "pause":
 			ic.pause()
-			
+
 		if command == "resume":
 			ic.resume()
-			
+
 		if command == "stop":
 			ic.stop()
-			
+
 		if command == "exit":
 			ic.stop()
 			ic.join()
@@ -69,30 +69,30 @@ Parent, child thread::
 
 	def parent(thread):
 		global p_thread, c_thread
-		
+
 		p_thread = thread
 		c_thread = thread.create_child(child)
 		c_thread.start()
-		
+
 		thread.message_loop()
 
 	def child(thread):
 		thread.message_loop()
-		
+
 	Worker(parent).start()
-			
+
 	while True:
 		command = input("print|stop|exit: ")
-		
+
 		if command == "print":
 			print("p_thread.is_running(): {}\nc_thread.is_running(): {}".format(
 				p_thread.is_running(),
 				c_thread.is_running()
 			))
-			
+
 		if command == "stop":
 			p_thread.stop()
-			
+
 		if command == "exit":
 			p_thread.stop()
 			p_thread.join()
@@ -108,7 +108,7 @@ Async task::
 	def long_work(t):
 		sleep(t)
 		return "Finished in {} second(s)".format(t)
-		
+
 	lw_thread = Worker.async(long_work, 5)
 
 	# Do other stuff here...
@@ -128,32 +128,32 @@ Async + parent/child::
 	def long_work(t):
 		sleep(t)
 		return "Finished in {} second(s)".format(t)
-		
+
 	def parent(thread):
 		global p_thread, c_thread
-		
+
 		p_thread = thread
 		async = thread.async(long_work, 5)
 		c_thread = async.thread
-		
+
 		# Do other stuff here...
-		
+
 		print(thread.await(async))
-		
+
 	Worker(parent).start()
 
 	while True:
 		command = input("print|stop|exit: ")
-		
+
 		if command == "print":
 			print("p_thread.is_running(): {}\nc_thread.is_running(): {}".format(
 				p_thread.is_running(),
 				c_thread.is_running()
 			))
-			
+
 		if command == "stop":
 			p_thread.stop()
-			
+
 		if command == "exit":
 			p_thread.stop()
 			p_thread.join()
@@ -169,29 +169,29 @@ Message::
 		@thread.listen("hello")
 		def _():
 			return "world!"
-			
+
 		@thread.listen("ok")
 		def _():
 			return "cool"
-			
+
 		thread.message_loop()
-		
+
 	w_thread = Worker(work)
 	w_thread.start()
 
 	while True:
 		command = input("<message>|exit: ")
-		
+
 		if command == "exit":
 			w_thread.stop()
 			w_thread.join()
 			break
-			
+
 		else:
 			message = w_thread.message(command)
-			
+
 			# Do other stuff here...
-			
+
 			print(message.get())
 
 Message + parent/child::
@@ -208,7 +208,7 @@ Message + parent/child::
 			print(number)
 			sleep(1)
 			thread.bubble("hey", number + 1)
-			
+
 		thread.message_loop()
 
 	def even_man(thread):
@@ -221,22 +221,22 @@ Message + parent/child::
 
 		od_thread = thread.create_child(odd_man)
 		od_thread.start()
-		
+
 		thread.message("hey", 0)
-		
+
 		thread.message_loop()
-		
+
 	w_thread = Worker(even_man)
 
 	while True:
 		command = input("start|stop|exit: ")
-		
+
 		if command == "start":
 			w_thread.start()
-			
+
 		if command == "stop":
 			w_thread.stop()
-			
+
 		if command == "exit":
 			w_thread.stop()
 			w_thread.join()
@@ -250,7 +250,7 @@ Clean up threads on exit::
 
 	def loop(thread):
 		thread.message_loop()
-		
+
 	# if you doesn't hold the reference, the thread become daemon thread.
 	Worker(loop).start()
 
@@ -261,4 +261,9 @@ Known issues
 ------------
 * If there is an error in `worker.sync`, the error message will be printed
   twice, once in the child thread and once in the parent.
+
+Changelog
+---------
+* Version 0.3.0 (Jun 14, 2015)
+	- Catch BaseException.
 
