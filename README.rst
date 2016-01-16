@@ -262,6 +262,10 @@ Known issues
 * If there is an error in `worker.sync`, the error message will be printed
   twice, once in the child thread and once in the parent.
 
+Notes
+-----
+* Thread safe operations: http://effbot.org/pyfaq/what-kinds-of-global-value-mutation-are-thread-safe.htm
+
 Changelog
 ---------
 * Version 0.3.0 (Jun 14, 2015)

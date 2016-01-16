@@ -7,9 +7,71 @@ A threaded worker, implemented with message queue and parent/child pattern.
 
 __version__ = "0.3.0"
 
-import queue, threading, traceback, time, inspect, atexit
+import queue, threading, traceback, time, inspect
 
 class WorkerExit(BaseException): pass
+
+class Event:
+	"""Event"""
+	def __init__(self, name, data=None, bubble=True):
+		self.name = name
+		self.data = data
+		self.bubble = bubble
+
+class Node:
+	"""Message node"""
+	def __init__(self):
+		self.listeners = None
+		self.parent_node = None
+		self.children = None
+
+	def fire(self, event, data=None, bubble=True):
+		if not isinstance(event, Event):
+			event = Event(event, data=data, bubble=bubble)
+		self.process_event(event)
+
+	def process_event(self, event):
+		if event.name in self.listeners:
+			for callback in self.listeners[event.name]
+				callback(event)
+		self.transfer_event(event)
+
+	def transfer_event(self, event):
+		if event.bubble and self.parent_node:
+			self.parent_node.fire(event)
+
+	def append_child(self, node):
+		if not self.children:
+			self.children = set()
+
+		self.children.add(node)
+		node.parent_node = self
+
+	def listen(self, event_name):
+		"""This is a decorator. Listen to a specific message.
+
+		The callback should look like `callback(Event)`
+		"""
+		def listen_message(callback):
+			"""Decorate callback"""
+			if not self.listeners:
+				self.listeners = {}
+
+			if event_name not in self.listeners:
+				self.listeners[event_name] = []
+
+			self.listeners[event_name].append(callback)
+			return callback
+		return listen_message
+
+class LiveNode(Node):
+	"""Live message node, integrate with thread"""
+	def __init__(self):
+		super().__init__()
+		self.thread = None
+		self.event_que = None
+
+	def
 
 class Message:
 	"""Message object"""
@@ -130,45 +192,6 @@ class Worker:
 			children = self.children.copy()
 			for child in children:
 				child._message(message)
-
-	def listen(self, message):
-		"""This is a decorator. Listen to a specific message.
-
-		The arguments of callback function should always be in following forms:
-		  def callback(): pass
-		  def callback(sender): pass
-		  def callback(<param>): pass
-		  def callback(<param>, sender): pass
-
-		Check the source for detail.
-		"""
-
-		if message not in self.listeners:
-			self.listeners[message] = []
-
-		def listen_message(callback):
-			"""Decorate callback"""
-			sign = inspect.signature(callback)
-			count = len(sign.parameters)
-
-			def listener(param, sender):
-				if count == 0:
-					return callback()
-
-				elif count == 1 and "sender" in sign.parameters:
-					return callback(sender)
-
-				elif count == 1:
-					return callback(param)
-
-				else:
-					return callback(param, sender)
-
-			self.listeners[message].append(listener)
-
-			return callback
-
-		return listen_message
 
 	def process_message(self, message):
 		"""Process and transfer message"""
