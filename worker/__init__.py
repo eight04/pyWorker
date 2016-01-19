@@ -36,9 +36,9 @@ class Node:
 
 		self.listener_pool = None
 
-	def fire(self, event, **kwargs):
+	def fire(self, event, *args, **kwargs):
 		if not isinstance(event, Event):
-			event = Event(event, **kwargs)
+			event = Event(event, *args, **kwargs)
 		self.process_event(event)
 		self.transfer_event(event)
 
@@ -72,14 +72,14 @@ class Node:
 		node.parent_node = None
 		return node
 
-	def listen(self, event_name, target=None):
+	def listen(self, event_name, *args, **kwargs):
 		"""This is a decorator. Listen to a specific message.
 
 		The callback should look like `callback(Event)`
 		"""
 		def listen_message(callback):
 			"""Decorate callback"""
-			listener = Listener(callback, event_name, target=target)
+			listener = Listener(callback, event_name, *args, **kwargs)
 
 			if not self.listeners:
 				self.listeners = {}
