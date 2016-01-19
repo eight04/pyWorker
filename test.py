@@ -1,43 +1,45 @@
 #! python3
 
-from worker import Worker, global_cleanup, UserWorker
 from time import sleep
+from worker import LiveNode, current_thread
 
 import inspect
 
 print("Test basic start/stop worker")
 
 count = 0
-def increaser(thread):
+def increaser():
+	thread = current_thread()
 	global count
 	while True:
 		thread.wait(1)
 		count += 1
-ic_thread = Worker(increaser).start()
+
+thread = LiveNode(increaser).start()
 sleep(5.5)
-ic_thread.stop()
+thread.stop()
 
 assert count == 5
 
 
 
-print("Child thread should stop when parent thread is done")
+print("Parent thread will call self.stop_child after finished")
 
 p_thread = None
 c_thread = None
 
-def parent(thread):
+def parent():
 	global p_thread, c_thread
-	
-	p_thread = thread
-	c_thread = thread.create_child(child).start()
-	
-	thread.wait(5)
-	
-def child(thread):
-	thread.message_loop()
-	
-Worker(parent).start()
+
+	p_thread = current_thread()
+	c_thread = p_thread.add_child(LiveNode(child).start())
+
+	p_thread.wait(5)
+
+def child():
+	current_thread().wait(-1)
+
+LiveNode(parent).start()
 sleep(5.5)
 
 assert p_thread.is_running() is False
@@ -50,46 +52,24 @@ print("Create async task")
 def long_work(timeout):
 	sleep(timeout)
 	return "Finished in {} seconds".format(timeout)
-	
-async = Worker.async(long_work, 5)
+
+async = current_thread().async(long_work, 5)
 assert async.get() == "Finished in 5 seconds"
-		
-		
-		
+
+
+
 print("Create async task on child thread")
-def parent(thread):
+def parent():
+	thread = current_thread()
 	async = thread.async(child, 5)
 	assert thread.await(async) == "Finished in 5 seconds"
-	
+
 def child(timeout):
 	sleep(timeout)
 	return "Finished in {} seconds".format(timeout)
-	
-Worker(parent).start().join()
 
+LiveNode(parent).start().join()
 
-
-print("Test message")
-def background(thread):
-	@thread.listen("hello")
-	def dummy():
-		return "world!"
-		
-	@thread.listen("ok")
-	def dummy():
-		return "cool"
-		
-	thread.message_loop()
-	
-bg_thread = Worker(background).start()
-
-message = bg_thread.message("hello")
-assert message.get() == "world!"
-
-message = bg_thread.message("ok")
-assert message.get() == "cool"
-
-bg_thread.stop().join()
 
 
 
@@ -98,78 +78,70 @@ parent_hello = False
 child_hello = False
 parent_fine = False
 
-def parent(thread):
-	c_thread = thread.create_child(child).start()
+def parent():
+	thread = current_thread()
+
+	c_thread = thread.add_child(LiveNode(child).start())
 	assert c_thread.is_running() is True
-	
+
 	@thread.listen("hello")
-	def dummy():
+	def _(event):
 		global parent_hello
 		parent_hello = True
 		assert c_thread.is_running() is True
-		thread.broadcast("hello")
-		
+		thread.fire("hello", broadcast=True)
+
 	@thread.listen("I'm fine")
-	def dummy():
+	def _(event):
 		global parent_fine
 		parent_fine = True
 		thread.stop()
-		
-	thread.message_loop()
-	
-def child(thread):
+
+	thread.wait(-1)
+
+def child():
+	thread = current_thread()
 
 	@thread.listen("hello")
-	def dummy():
+	def _(event):
 		global child_hello
 		child_hello = True
-		thread.bubble("I'm fine")
-		
-	thread.message_loop()
+		thread.fire("I'm fine", bubble=True)
 
-p_thread = Worker(parent).start()
+	thread.wait(-1)
+
+p_thread = LiveNode(parent).start()
 assert p_thread.is_running() is True
-p_thread.message("hello")
+p_thread.fire("hello")
 p_thread.join()
 
 assert (parent_hello, child_hello, parent_fine) == (True, True, True)
-		
-		
-		
-print("Test global_cleanup")
 
-def loop(thread):
-	thread.message_loop()
-	
-l_thread = Worker(loop).start()
-
-global_cleanup()
-
-assert l_thread.is_running() is False
-	
 
 
 print("Test UserWorker")
 
 test_done = False
 
-class Child(UserWorker):
+class Child(LiveNode):
 	def test(self):
-		self.bubble("test")
+		self.fire("test", bubble=True)
 
-class Parent(UserWorker):
-	def worker(self):
-	
+class Parent(LiveNode):
+	def regist_listener(self):
+		super().regist_listener()
+
 		@self.listen("test")
-		def dummy():
+		def _(event):
 			global test_done
 			test_done = True
-			
-		child = self.create_child(Child)
-		child.start()
-		
+			self.stop()
+
+	def worker(self):
+		child = self.add_child(Child().start())
 		child.test()
-		
+		self.wait(-1)
+
 Parent().start().join()
 
 assert test_done is True

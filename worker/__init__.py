@@ -21,12 +21,20 @@ class Event:
 		self.bubble = bubble
 		self.broadcast = broadcast
 
+class Listener:
+	def __init__(self, callback, event_name, target=None):
+		self.callback = callback
+		self.event_name = event_name
+		self.target = target
+
 class Node:
 	"""Message node"""
 	def __init__(self):
 		self.listeners = None
 		self.parent_node = None
 		self.children = None
+
+		self.listener_pool = None
 
 	def fire(self, event, **kwargs):
 		if not isinstance(event, Event):
@@ -36,10 +44,10 @@ class Node:
 
 	def process_event(self, event):
 		if event.name in self.listeners:
-			for callback in self.listeners[event.name]
-				if callback.target is None or callback.target is event.target:
+			for listener in self.listeners[event.name]:
+				if listener.target is None or listener.target is event.target:
 					try:
-						callback(event)
+						listener.callback(event)
 					except Exception as err:
 						traceback.print_exc()
 						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
@@ -55,9 +63,14 @@ class Node:
 	def add_child(self, node):
 		if not self.children:
 			self.children = set()
-
 		self.children.add(node)
 		node.parent_node = self
+		return node
+
+	def remove_child(self, node):
+		self.children.remove(node)
+		node.parent_node = None
+		return node
 
 	def listen(self, event_name, target=None):
 		"""This is a decorator. Listen to a specific message.
@@ -66,21 +79,26 @@ class Node:
 		"""
 		def listen_message(callback):
 			"""Decorate callback"""
-			callback.event_name = event_name
-			callback.target = target
+			listener = Listener(callback, event_name, target=target)
 
 			if not self.listeners:
 				self.listeners = {}
 
+			if not self.listener_pool:
+				self.listener_pool = {}
+
 			if event_name not in self.listeners:
 				self.listeners[event_name] = []
 
-			self.listeners[event_name].append(callback)
+			self.listeners[event_name].append(listener)
+			self.listener_pool[callback] = listener
 			return callback
 		return listen_message
 
 	def unlisten(self, callback):
-		self.listeners[callback.event_name].remove(callback)
+		listener = self.listener_pool[callback]
+		self.listeners[listener.event_name].remove(listener)
+		del self.listener_pool[callback]
 
 class LiveNode(Node):
 	"""Live message node, integrate with thread"""
@@ -93,7 +111,7 @@ class LiveNode(Node):
 		self.reset()
 		self.regist_listener()
 
-	def regist_listener(self)
+	def regist_listener(self):
 		@self.listen("STOP_THREAD")
 		def _(event):
 			raise WorkerExit
@@ -102,7 +120,7 @@ class LiveNode(Node):
 		def _(event):
 			if not self.suspend:
 				self.suspend = True
-				self.wait_message("RESUME_THREAD", cache=True)
+				self.wait_event("RESUME_THREAD", cache=True)
 				self.suspend = False
 
 	def process_event(self, event):
@@ -122,18 +140,20 @@ class LiveNode(Node):
 	def wait(self, timeout):
 		if not self.event_que:
 			self.event_que = queue.Queue()
+		if not self.event_cache:
+			self.event_cache = queue.Queue()
 
 		ts = time.time()
 		te = ts
 
-		self.clean_cache()
-
 		while te - ts <= timeout or timeout < 0:
-			try:
-				event = self.event_que.get(timeout=timeout - (te - ts) if timeout > 0 else None)
-			except queue.Empty:
-				return
+			if not self.event_cache.empty():
+				event = self.event_cache.get_nowait()
 			else:
+				try:
+					event = self.event_que.get(timeout=timeout - (te - ts) if timeout > 0 else None)
+				except queue.Empty:
+					return
 				super().process_event(event)
 
 			te = time.time()
@@ -161,30 +181,36 @@ class LiveNode(Node):
 			if cache:
 				self.event_cache.put(event)
 
+	def parent_fire(self, *args, **kwargs):
+		if self.parent_node:
+			self.parent_node.fire(*args, **kwargs)
+
 	def thread_target(self):
 		thread = self.thread
 
-		global_pool[thread] = self
+		thread_pool[thread] = self
 
-		self.parent_node.fire("CHILD_THREAD_START", target=self)
+		self.parent_fire("CHILD_THREAD_START", target=self)
 
 		# execute target
 		ret = None
 		try:
 			ret = self.worker(*self.thread_args, **self.thread_kwargs)
 		except WorkerExit:
-			self.parent_node.fire("CHILD_THREAD_STOP", target=self)
+			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
 			traceback.print_exc()
-			self.parent_node.fire("CHILD_THREAD_ERROR", data=err, target=self)
+			self.parent_fire("CHILD_THREAD_ERROR", data=err, target=self)
 		else:
-			self.parent_node.fire("CHILD_THREAD_DONE", data=ret, target=self)
+			self.parent_fire("CHILD_THREAD_DONE", data=ret, target=self)
+
+		self.fire("STOP_THREAD", broadcast=True)
 
 		self.reset()
 
-		self.parent_node.fire("CHILD_THREAD_END", target=self)
+		self.parent_fire("CHILD_THREAD_END", target=self)
 
-		del global_pool[thread]
+		del thread_pool[thread]
 
 	def reset(self):
 		self.thread = None
@@ -201,13 +227,13 @@ class LiveNode(Node):
 		if not self.thread:
 			self.thread_args = args
 			self.thread_kwargs = kwargs
-			self.thread = threading.Thread(target=self.worker)
+			self.thread = threading.Thread(target=self.thread_target)
 			self.thread.start()
 		return self
 
 	def stop(self):
 		"""Stop thread"""
-		self.fire("STOP_THREAD", broadcast=True)
+		self.fire("STOP_THREAD")
 		return self
 
 	def pause(self):
@@ -281,16 +307,18 @@ class Async:
 	def get(self):
 		"""Wait for thread ending"""
 		if not self.end:
-			self.thread.wait_message("CHILD_THREAD_END", target=self.child)
+			self.thread.wait_event("CHILD_THREAD_END", target=self.child)
 
 		if self.err:
 			raise err
 
 		return self.ret
 
+	def is_running(self):
+		return self.thread is not None
+
 def current_thread():
-	return global_pool[threading.current_thread()]
+	return thread_pool[threading.current_thread()]
 
-global_pool = {}
-
-global_pool[threading.main_thread()] = LiveNode()
+thread_pool = {}
+thread_pool[threading.main_thread()] = LiveNode()
