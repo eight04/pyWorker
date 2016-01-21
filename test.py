@@ -3,7 +3,7 @@
 from time import sleep
 from worker import LiveNode, current_thread, Async
 
-print("Test basic start/pause/resume/stop")
+print("Thread operations: start/pause/resume/stop/join")
 
 count = 0
 def increaser():
@@ -16,24 +16,25 @@ def increaser():
 		count = event.data
 
 	while True:
-		thread.wait(1)
+		thread.wait(0.1)
 		count += 1
 
 thread = LiveNode(increaser).start()
-sleep(5.5)
+sleep(0.55)
 assert count == 5
 thread.pause()
 thread.fire("reset", 0)
-sleep(0.5)
+sleep(0.15)
 assert count == 0
 thread.resume()
-sleep(0.5)
+sleep(0.05)
 assert count == 1
-sleep(4)
+sleep(0.4)
 assert count == 5
 thread.stop()
-sleep(5.5)
+sleep(0.15)
 assert count == 5
+thread.join()
 
 
 
@@ -48,13 +49,13 @@ def parent():
 	p_thread = current_thread()
 	c_thread = p_thread.add_child(LiveNode(child).start())
 
-	p_thread.wait(5)
+	p_thread.wait(0.1)
 
 def child():
 	current_thread().wait(-1)
 
 LiveNode(parent).start()
-sleep(5.5)
+sleep(0.15)
 
 assert p_thread.is_running() is False
 assert c_thread.is_running() is False
@@ -68,30 +69,30 @@ def long_work(timeout):
 	sleep(timeout)
 	return "Finished in {} seconds".format(timeout)
 
-async = thread.async(long_work, 5)
-assert thread.await(async) == "Finished in 5 seconds"
+async = thread.async(long_work, 0.1)
+assert thread.await(async) == "Finished in 0.1 seconds"
 
 print("Another situation")
-async = thread.async(long_work, 3)
-sleep(5)
-assert thread.await(async) == "Finished in 3 seconds"
+async = thread.async(long_work, 0.1)
+sleep(0.2)
+assert thread.await(async) == "Finished in 0.1 seconds"
 
 
 print("Use Async class")
-async = Async(long_work, 5)
-assert async.get() == "Finished in 5 seconds"
+async = Async(long_work, 0.1)
+assert async.get() == "Finished in 0.1 seconds"
 
 print("Another situation")
-async = Async(long_work, 3)
-sleep(5)
-assert async.get() == "Finished in 3 seconds"
+async = Async(long_work, 0.1)
+sleep(0.2)
+assert async.get() == "Finished in 0.1 seconds"
 
 
 print("Create async task on child thread")
 def parent():
 	thread = current_thread()
-	async = thread.async(child, 5)
-	assert thread.await(async) == "Finished in 5 seconds"
+	async = thread.async(child, 0.1)
+	assert thread.await(async) == "Finished in 0.1 seconds"
 
 def child(timeout):
 	sleep(timeout)
@@ -182,27 +183,28 @@ def increaser():
 	count = 0
 	while True:
 		thread.fire("GIVE_NUMBER", data=count, bubble=True)
-		sleep(1)
+		thread.wait(0.1)
 		count += 1
 
 thread = current_thread()
-count = 1
-child = thread.add_child(LiveNode(increaser).start())
+listener_len = len(thread.listener_pool)
+children_len = len(thread.children)
 
-sleep(0.5)
-
+count = 0
 @thread.listen("GIVE_NUMBER")
 def give_number_handler(event):
 	global count
-	print(event.data, count)
 	assert event.data == count
 	count += 1
 	if count > 5:
 		thread.stop()
 		thread.unlisten(give_number_handler)
-		thread.remove_child(child)
+
+child = thread.add_child(LiveNode(increaser)).start()
 
 thread.wait(-1)
 
-assert len(thread.listener_pool) == 0
-assert len(thread.children) == 0
+child.join()
+
+assert len(thread.listener_pool) == listener_len
+assert len(thread.children) == children_len

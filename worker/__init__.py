@@ -33,6 +33,7 @@ class Node:
 		self.listeners = None
 		self.parent_node = None
 		self.children = None
+		self.node_name = str(self)
 
 		self.listener_pool = None
 
@@ -49,6 +50,7 @@ class Node:
 					try:
 						listener.callback(event)
 					except Exception as err:
+						print("error occurred in listener: " + self.node_name)
 						traceback.print_exc()
 						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
 
@@ -102,11 +104,13 @@ class Node:
 
 class LiveNode(Node):
 	"""Live message node, integrate with thread"""
-	def __init__(self, worker=None):
+	def __init__(self, worker=None, daemon=True):
 		super().__init__()
 
 		if worker:
 			self.worker = worker
+			self.node_name = str(worker)
+		self.daemon = daemon
 
 		self.reset()
 		self.regist_listener()
@@ -186,9 +190,7 @@ class LiveNode(Node):
 			self.parent_node.fire(*args, **kwargs)
 
 	def thread_target(self):
-		thread = self.thread
-
-		thread_pool[thread] = self
+		pool_add(self)
 
 		self.parent_fire("CHILD_THREAD_START", target=self)
 
@@ -199,18 +201,22 @@ class LiveNode(Node):
 		except WorkerExit:
 			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
+			print("thread crashed: " + self.node_name)
 			traceback.print_exc()
 			self.parent_fire("CHILD_THREAD_ERROR", data=err, target=self)
 		else:
 			self.parent_fire("CHILD_THREAD_DONE", data=ret, target=self)
 
+		self.parent_fire("CHILD_THREAD_END", target=self)
+
+		pool_remove(self)
+
+		if self.daemon and self.parent_node:
+			self.parent_node.remove_child(self)
+
 		self.fire("STOP_THREAD", broadcast=True)
 
 		self.reset()
-
-		self.parent_fire("CHILD_THREAD_END", target=self)
-
-		del thread_pool[thread]
 
 	def reset(self):
 		self.thread = None
@@ -227,9 +233,12 @@ class LiveNode(Node):
 		if not self.thread:
 			self.thread_args = args
 			self.thread_kwargs = kwargs
-			self.thread = threading.Thread(target=self.thread_target)
+			self.thread = threading.Thread(target=self.thread_target, daemon=self.daemon)
 			self.thread.start()
 		return self
+
+	def start_as_main(self):
+		pass
 
 	def stop(self):
 		"""Stop thread"""
@@ -249,7 +258,8 @@ class LiveNode(Node):
 
 	def join(self):
 		"""thread join method."""
-		self.thread.join()
+		if self.thread:
+			self.thread.join()
 		return self
 
 	def async(self, callback, *args, **kwargs):
@@ -293,13 +303,7 @@ class Async:
 	def error_callback(self, event):
 		self.err = event.data
 
-	def listener_recorder(self, callback):
-		self.listeners.add(callback)
-		return callback
-
 	def cleanup(self):
-		self.thread.remove_child(self.child)
-
 		self.thread.unlisten(self.error_callback)
 		self.thread.unlisten(self.done_callback)
 		self.thread.unlisten(self.end_callback)
@@ -314,11 +318,24 @@ class Async:
 
 		return self.ret
 
-	def is_running(self):
-		return self.thread is not None
+
+class RootNode(LiveNode):
+	def wait(self, *args, **kwargs):
+		try:
+			super().wait(*args, **kwargs)
+		except WorkerExit:
+			self.fire("STOP_THREAD", broadcast=True)
+			self.reset()
+
+	def wait_event(self, *args, **kwargs):
+		try:
+			super().wait_event(*args, **kwargs)
+		except WorkerExit:
+			self.fire("STOP_THREAD", broadcast=True)
+			self.reset()
 
 def current_thread():
 	return thread_pool[threading.current_thread()]
 
 thread_pool = {}
-thread_pool[threading.main_thread()] = LiveNode()
+thread_pool[threading.main_thread()] = RootNode()
