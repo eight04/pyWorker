@@ -189,7 +189,7 @@ class LiveNode(Node):
 		if self.parent_node:
 			self.parent_node.fire(*args, **kwargs)
 
-	def thread_target(self):
+	def thread_target(self, *args, **kwargs):
 		pool_add(self)
 
 		self.parent_fire("CHILD_THREAD_START", target=self)
@@ -197,7 +197,7 @@ class LiveNode(Node):
 		# execute target
 		ret = None
 		try:
-			ret = self.worker(*self.thread_args, **self.thread_kwargs)
+			ret = self.worker(*args, **kwargs)
 		except WorkerExit:
 			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
@@ -223,22 +223,20 @@ class LiveNode(Node):
 		self.event_que = None
 		self.event_cache = None
 
-		self.thread_args = None
-		self.thread_kwargs = None
-
 		self.suspend = False
 
 	def start(self, *args, **kwargs):
 		"""Start thread"""
 		if not self.thread:
-			self.thread_args = args
-			self.thread_kwargs = kwargs
-			self.thread = threading.Thread(target=self.thread_target, daemon=self.daemon)
+			self.thread = threading.Thread(target=self.thread_target, daemon=self.daemon, args=args, kwargs=kwargs)
 			self.thread.start()
 		return self
 
-	def start_as_main(self):
-		pass
+	def start_as_main(self, *args, **kwargs):
+		if not self.thread:
+			self.thread = threading.current_thread()
+			self.thread_target(*args, **kwargs)
+		return self
 
 	def stop(self):
 		"""Stop thread"""
@@ -320,6 +318,10 @@ class Async:
 
 
 class RootNode(LiveNode):
+	def __init__(self):
+		super().__init__()
+		self.thread = threading.main_thread()
+
 	def wait(self, *args, **kwargs):
 		try:
 			super().wait(*args, **kwargs)
@@ -334,8 +336,20 @@ class RootNode(LiveNode):
 			self.fire("STOP_THREAD", broadcast=True)
 			self.reset()
 
-def current_thread():
-	return thread_pool[threading.current_thread()]
-
 thread_pool = {}
-thread_pool[threading.main_thread()] = RootNode()
+
+def current_thread():
+	return thread_pool[threading.current_thread()][-1]
+
+def pool_add(node):
+	if node.thread not in thread_pool:
+		thread_pool[node.thread] = []
+	thread_pool[node.thread].append(node)
+
+def pool_remove(node):
+	if len(thread_pool[node.thread]) == 1:
+		del thread_pool[node.thread]
+	else:
+		thread_pool[node.thread].pop()
+
+pool_add(RootNode())

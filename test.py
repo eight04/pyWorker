@@ -208,3 +208,18 @@ child.join()
 
 assert len(thread.listener_pool) == listener_len
 assert len(thread.children) == children_len
+
+
+print("start as main")
+class MyWorker(LiveNode):
+	def worker(self, param, hello=None):
+		assert param == "Hello world!"
+		assert hello == "Hello"
+		assert current_thread() is self
+MyWorker().start_as_main("Hello world!", hello="Hello").join()
+
+
+print("RootNode join")
+current_thread().join()
+
+
