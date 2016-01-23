@@ -13,6 +13,16 @@ Features
 * Create async tasks.
 * Communicate between threads with Message.
 
+Todos
+-----
+* Daemon thread.
+	* Daemon thread should be able to be interrupt.
+	* If a parent thread contains a non-daemon child thread, the parent should wait till child stop.
+	* Inherit default value from parent node.
+* Self-destroy thread.
+	* Use in async, sync, or other threads that only runs once.
+	* Remove self from parent after finished.
+
 Install
 -------
 ::
