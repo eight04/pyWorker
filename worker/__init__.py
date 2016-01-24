@@ -44,9 +44,12 @@ class Node:
 		self.transfer_event(event)
 
 	def process_event(self, event):
+		if not self.listeners:
+			return
+
 		if event.name in self.listeners:
 			for listener in self.listeners[event.name]:
-				if listener.target is None or listener.target is event.target:
+				if listener.target is None or listener.target is event.target:	# FIXME
 					try:
 						listener.callback(event)
 					except Exception as err:
@@ -66,12 +69,12 @@ class Node:
 		if not self.children:
 			self.children = set()
 		self.children.add(node)
-		node.parent_node = self
+		node.parent_node = self	# FIXME
 		return node
 
 	def remove_child(self, node):
 		self.children.remove(node)
-		node.parent_node = None
+		node.parent_node = None # FIXME
 		return node
 
 	def listen(self, event_name, *args, **kwargs):
@@ -129,10 +132,11 @@ class LiveNode(Node):
 				self.suspend = False
 
 	def process_event(self, event):
-		if self.is_running():
-			self.que_event(event)
+		self.que_event(event)
 
 	def que_event(self, event):
+		if not self.thread:
+			return
 		if not self.event_que:
 			self.event_que = queue.Queue()
 		self.event_que.put(event)

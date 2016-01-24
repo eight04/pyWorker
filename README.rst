@@ -15,13 +15,18 @@ Features
 
 Todos
 -----
-* Daemon thread.
-	* Daemon thread should be able to be interrupt.
-	* If a parent thread contains a non-daemon child thread, the parent should wait till child stop.
-	* Inherit default value from parent node.
-* Self-destroy thread.
-	* Use in async, sync, or other threads that only runs once.
-	* Remove self from parent after finished.
+* Some methods are not thread safe.
+	* Iterate through mutable sequence.
+	* Use variable from other thread.
+		* This make late-initializing become not thread safe since the other thread could change thread value through fire.
+		* Add/remove child, use others' parent_node.
+		* Self-destroy thread, use others' children(remove_child).
+		* Any method use .thread. This should be safe in most situation since thread only modify on start and stop.
+		* Any method use .daemon. This should be safe since .daemon is only modified in init.
+		* Fire and transfer event, use others' parent_node.
+		* Pause, use others' .suspend.
+		* Async, which is an object shared between threads.
+* Replace node_name with node_name().
 
 Install
 -------

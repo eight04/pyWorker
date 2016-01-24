@@ -118,3 +118,21 @@ class MyWorker(LiveNode):
 		assert hello == "Hello"
 		assert current_thread() is self
 MyWorker().start_as_main("Hello world!", hello="Hello").join()
+
+# The folowing tests relate to: http://stackoverflow.com/questions/3752618/python-adding-element-to-list-while-iterating
+print("one-time listener")
+thread = LiveNode().start()
+@thread.listen("test")
+def _(event):
+	thread.unlisten(_)
+thread.fire("test")
+
+print("listener that add another listener")
+@thread.listen("test2")
+def _(event):
+	def dummy(event):
+		print("dummy")
+	thread.listen("test2")(dummy)
+thread.fire("test2")
+
+thread.stop().join()
