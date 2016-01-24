@@ -129,7 +129,8 @@ class LiveNode(Node):
 				self.suspend = False
 
 	def process_event(self, event):
-		self.que_event(event)
+		if self.is_running():
+			self.que_event(event)
 
 	def que_event(self, event):
 		if not self.event_que:
