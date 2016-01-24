@@ -104,13 +104,14 @@ class Node:
 
 class LiveNode(Node):
 	"""Live message node, integrate with thread"""
-	def __init__(self, worker=None, daemon=True):
+	def __init__(self, worker=None, daemon=None, self_destroy=False):
 		super().__init__()
 
 		if worker:
 			self.worker = worker
 			self.node_name = str(worker)
 		self.daemon = daemon
+		self.self_destroy = self_destroy
 
 		self.reset()
 		self.regist_listener()
@@ -137,6 +138,17 @@ class LiveNode(Node):
 
 	def is_running(self):
 		return self.thread is not None
+
+	def is_daemon(self):
+		if self.daemon is not None:
+			return self.daemon
+
+		parent = self.parent_node
+		while parent:
+			if isinstance(parent, LiveNode):
+				return parent.is_daemon()
+			parent = parent.parent_node
+		return False
 
 	def worker(self):
 		self.wait(-1)
@@ -211,10 +223,10 @@ class LiveNode(Node):
 
 		pool_remove(self)
 
-		if self.daemon and self.parent_node:
+		if self.self_destroy and self.parent_node:
 			self.parent_node.remove_child(self)
 
-		self.fire("STOP_THREAD", broadcast=True)
+		stop_node_children(self)
 
 		self.reset()
 
@@ -278,7 +290,7 @@ class Async:
 	def __init__(self, callback, *args, **kwargs):
 		"""Create async object"""
 		self.thread = current_thread()
-		self.child = LiveNode(callback)
+		self.child = LiveNode(callback, self_destroy=True, daemon=True)
 
 		self.end = False
 		self.ret = None
@@ -312,7 +324,7 @@ class Async:
 			self.thread.wait_event("CHILD_THREAD_END", target=self.child)
 
 		if self.err:
-			raise err
+			raise self.err
 
 		return self.ret
 
@@ -353,3 +365,15 @@ def pool_remove(node):
 		thread_pool[node.thread].pop()
 
 pool_add(RootNode())
+
+def stop_node_children(node):
+	if not node.children:
+		return
+
+	for child in node.children:
+		if not isinstance(child, LiveNode):
+			stop_node_children(child)
+		elif child.is_daemon():
+			child.stop()
+		else:
+			child.stop().join()

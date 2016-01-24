@@ -88,7 +88,7 @@ assert async.get() == "Finished in 0.1 seconds"
 
 print("Test bubble/broadcast message")
 parent = LiveNode().start()
-child = parent.add_child(LiveNode).start()
+child = parent.add_child(LiveNode()).start()
 bubble = False
 broadcast = False
 
@@ -118,6 +118,3 @@ class MyWorker(LiveNode):
 		assert hello == "Hello"
 		assert current_thread() is self
 MyWorker().start_as_main("Hello world!", hello="Hello").join()
-
-print("RootNode join")
-current_thread().join()
