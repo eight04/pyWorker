@@ -17,16 +17,17 @@ Todos
 -----
 * Some methods are not thread safe.
 	* Iterate through mutable sequence.
-	* Use variable from other thread.
+	* Use variables shared with other threads.
 		* This make late-initializing become not thread safe since the other thread could change thread value through fire.
-		* Add/remove child, use others' parent_node.
 		* Self-destroy thread, use others' children(remove_child).
 		* Any method use .thread. This should be safe in most situation since thread only modify on start and stop.
 		* Any method use .daemon. This should be safe since .daemon is only modified in init.
+		* Any method use .parent_node.
 		* Fire and transfer event, use others' parent_node.
 		* Pause, use others' .suspend.
 		* Async, which is an object shared between threads.
 * Replace node_name with node_name().
+* Use a "River" channel to communicate with other threads?
 
 Install
 -------
