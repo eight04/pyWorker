@@ -353,6 +353,47 @@ class RootNode(LiveNode):
 			self.fire("STOP_THREAD", broadcast=True)
 			self.reset()
 
+class River(LiveNode):
+	def emit(self, event, *args, **kwargs):
+		if not isinstance(event, Event):
+			event = Event(event, *args, **kwargs)
+		self.fire("RIVER_MESSAGE", data=event)
+
+	def regist_listener(self):
+		super().regist_listener()
+
+		@self.listen("RIVER_MESSAGE")
+		def _(event):
+			if event.data.name in self.watchers:
+				for watcher in self.watchers[event.data.name]:
+					watcher(event)
+
+	def watch(self, event_name, *args, **kwargs):
+
+
+	def worker(self):
+		while True:
+			event = self.wait_event()
+
+@river.watch("OK", watcher=self)
+def _(event):
+	# River sent "OK" to me!
+
+@self.channel("OK")
+def _(event):
+	pass
+
+self.root.fire()
+
+channel["CRAWLER"].fire("MISSION_STATE_CHANGE", data=mission)
+channel["CRAWLER"].enter(self)
+channel["CRAWLER"].leave(self)
+
+river.fire("MISSION_STATE_CHANGE")
+river.enter("MISSION_STATE_CHANGE", self)
+
+# How to auto leave when thread stop?
+
 thread_pool = {}
 
 def current_thread():
