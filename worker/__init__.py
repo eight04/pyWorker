@@ -5,11 +5,15 @@
 A threaded worker, implemented with message queue and parent/child pattern.
 """
 
-__version__ = "0.3.0"
-
 import queue, threading, traceback, time, inspect, weakref
 
-class WorkerExit(BaseException): pass
+__version__ = "0.3.0"
+
+class WorkerExit(BaseException):
+	"""Raise this error will exit current thread. The user can use
+	thread.exit.
+	"""
+	pass
 
 class Event:
 	"""Event"""
@@ -28,9 +32,9 @@ class Listener:
 		self.event_name = event_name
 		self.target = target
 
-class Worker(Node):
+class Worker:
 	"""Live message node, integrate with thread"""
-	def __init__(self, worker=None, parent="AUTO", daemon=None, cleanup=None):
+	def __init__(self, worker=None, parent=True, daemon=None, cleanup=None):
 		self.node_name = str(self)
 		
 		self.children = set()
@@ -48,10 +52,10 @@ class Worker(Node):
 			self.worker = worker
 			self.node_name = str(worker)
 			
-		if parent == "AUTO" and not worker_pool.is_main():
+		if isinstance(parent, Worker):
 			self.parent_node = parent
-		elif isinstance(parent, Worker):
-			self.parent_node = parent
+		elif parent and not worker_pool.is_main():
+			self.parent_node = worker_pool.current()
 		else:
 			self.parent_node = None
 		
@@ -75,6 +79,7 @@ class Worker(Node):
 		# listen to builtin event
 		@self.listen("STOP_THREAD")
 		def _(event):
+			"""Stop thread"""
 			raise WorkerExit
 
 		@self.listen("PAUSE_THREAD")
@@ -116,12 +121,16 @@ class Worker(Node):
 
 	def transfer_event(self, event):
 		"""Bubble or broadcast event"""
-		if event.bubble and self.parent_node:
-			self.parent_node.fire(event)
+		if event.bubble:
+			self.parent_fire(event)
 
-		if event.broadcast and self.children:
-			for child in self.children:
-				child.fire(event)
+		if event.broadcast:
+			self.children_fire(event)
+			
+	def children_fire(self, event):
+		"""Fire event on children."""
+		for child in self.children.copy():
+			child.fire(event)
 
 	def process_event(self, event):
 		"""Deliver the event to listeners"""
@@ -167,7 +176,11 @@ class Worker(Node):
 		return self.thread is not None
 
 	def is_daemon(self):
-		"""Check if the thread is daemon. Daemon can be True, Falase, or None. When daemon is None, it will try to inherit daemon value from its parent"""
+		"""Check if the thread is daemon. Daemon can be True, Falase, or None.
+		
+		When daemon is None, it will try to inherit daemon value from its 
+		parent.
+		"""
 		if self.daemon is not None:
 			return self.daemon
 
@@ -182,21 +195,21 @@ class Worker(Node):
 
 	def wait(self, timeout):
 		"""Wait for timeout. Process events"""
-		ts = time.time()
-		te = ts
+		time_start = time.time()
+		time_end = time_start
 
-		while te - ts <= timeout or timeout < 0:
+		while time_end - time_start <= timeout or timeout < 0:
 			if not self.event_cache.empty():
 				event = self.event_cache.get_nowait()
 			else:
 				try:
-					event = self.event_que.get(timeout=timeout - (te - ts) if timeout > 0 else None)
+					event = self.event_que.get(timeout=timeout - (time_end - time_start) if timeout > 0 else None)
 				except queue.Empty:
 					return
 				# FIXME: should we make Node.process_event thread safe?
 				self.process_event(event)
 
-			te = time.time()
+			time_end = time.time()
 
 	def wait_event(self, name, target=None, cache=False):
 		"""Wait for event. Process events and return event data"""
@@ -221,7 +234,7 @@ class Worker(Node):
 
 	def parent_fire(self, *args, **kwargs):
 		"""Fire event to parent. Thread safe."""
-		parent = self.parent_node:
+		parent = self.parent_node
 		if parent:
 			self.parent_node.fire(*args, **kwargs)
 
@@ -273,9 +286,15 @@ class Worker(Node):
 		pass
 		
 	def start(self, *args, **kwargs):
-		"""Start thread. Not thread safe. You shouldn't rapidly call this method"""
+		"""Start thread. Not thread safe. You shouldn't rapidly call this 
+		method"""
 		if not self.thread:
-			self.thread = threading.Thread(target=self.wrap_worker, daemon=self.daemon, args=args, kwargs=kwargs)
+			self.thread = threading.Thread(
+                target=self.wrap_worker,
+				daemon=self.daemon,
+				args=args, 
+				kwargs=kwargs
+			)	
 			self.event_que = queue.Queue()
 			self.event_cache = queue.Queue()
 			self.thread.start()
@@ -305,10 +324,6 @@ class Worker(Node):
 		self.fire("RESUME_THREAD")
 		return self
 		
-	def exit(self):
-		"""Exit thread"""
-		raise WorkerExit
-
 	def join(self):
 		"""thread join method. Thread safe"""
 		real_thread = self.thread
@@ -316,18 +331,25 @@ class Worker(Node):
 			real_thread.join()
 		return self
 
-	def async(self, callback, *args, **kwargs):
+	@staticmethod
+	def exit():
+		"""Exit thread"""
+		raise WorkerExit
+
+	@staticmethod
+	def async(callback, *args, **kwargs):
 		"""Create Async"""
 		return Async(callback, *args, **kwargs)
 
-	def await(self, async):
+	@staticmethod
+	def await(async):
 		"""Wait async return"""
 		return async.get()
 
-	def sync(self, callback, *args, **kwargs):
+	@staticmethod
+	def sync(callback, *args, **kwargs):
 		"""Sync call"""
-		async = self.async(callback, *args, **kwargs)
-		return self.await(async)
+		return Async(callback, *args, **kwargs).get()
 		
 class Async:
 	"""Async object"""
@@ -395,23 +417,28 @@ class Pool:
 		self.lock = threading.Lock()
 		
 	def current(self):
+		"""Return current worker"""
 		with self.lock:
 			return self.pool[threading.current_thread()][-1]
 
 	def add(self, node):
+		"""Add worker to pool"""
 		with self.lock:
 			if node.thread not in self.pool:
 				self.pool[node.thread] = []
 			self.pool[node.thread].append(node)
 
 	def remove(self, node):
+		"""Remove worker from pool"""
 		with self.lock:
 			if len(self.pool[node.thread]) == 1:
 				del self.pool[node.thread]
 			else:
 				self.pool[node.thread].pop()
 	
-	def is_main(self):
+	@staticmethod
+	def is_main():
+		"""Check if the current thread is main thread"""
 		return threading.current_thread() is threading.main_thread()
 				
 class Channel:
