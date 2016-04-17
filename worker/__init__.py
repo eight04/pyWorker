@@ -7,7 +7,7 @@ A threaded worker, implemented with message queue and parent/child pattern.
 
 __version__ = "0.3.0"
 
-import queue, threading, traceback, time, atexit
+import queue, threading, traceback, time, inspect, weakref
 
 class WorkerExit(BaseException): pass
 
@@ -22,104 +22,57 @@ class Event:
 		self.broadcast = broadcast
 
 class Listener:
+	"""Event listener"""
 	def __init__(self, callback, event_name, target=None):
 		self.callback = callback
 		self.event_name = event_name
 		self.target = target
 
-class Node:
-	"""Message node"""
-	def __init__(self):
-		self.listeners = None
-		self.parent_node = None
-		self.children = None
-		self.node_name = str(self)
-
-		self.listener_pool = None
-
-	def fire(self, event, *args, **kwargs):
-		if not isinstance(event, Event):
-			event = Event(event, *args, **kwargs)
-		self.process_event(event)
-		self.transfer_event(event)
-
-	def process_event(self, event):
-		if not self.listeners:
-			return
-
-		if event.name in self.listeners:
-			for listener in self.listeners[event.name]:
-				if listener.target is None or listener.target is event.target:	# FIXME
-					try:
-						listener.callback(event)
-					except Exception as err:
-						print("error occurred in listener: " + self.node_name)
-						traceback.print_exc()
-						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
-
-	def transfer_event(self, event):
-		if event.bubble and self.parent_node:
-			self.parent_node.fire(event)
-
-		if event.broadcast and self.children:
-			for child in self.children:
-				child.fire(event)
-
-	def add_child(self, node):
-		if not self.children:
-			self.children = set()
-		self.children.add(node)
-		node.parent_node = self	# FIXME
-		return node
-
-	def remove_child(self, node):
-		self.children.remove(node)
-		node.parent_node = None # FIXME
-		return node
-
-	def listen(self, event_name, *args, **kwargs):
-		"""This is a decorator. Listen to a specific message.
-
-		The callback should look like `callback(Event)`
-		"""
-		def listen_message(callback):
-			"""Decorate callback"""
-			listener = Listener(callback, event_name, *args, **kwargs)
-
-			if not self.listeners:
-				self.listeners = {}
-
-			if not self.listener_pool:
-				self.listener_pool = {}
-
-			if event_name not in self.listeners:
-				self.listeners[event_name] = []
-
-			self.listeners[event_name].append(listener)
-			self.listener_pool[callback] = listener
-			return callback
-		return listen_message
-
-	def unlisten(self, callback):
-		listener = self.listener_pool[callback]
-		self.listeners[listener.event_name].remove(listener)
-		del self.listener_pool[callback]
-
-class LiveNode(Node):
+class Worker(Node):
 	"""Live message node, integrate with thread"""
-	def __init__(self, worker=None, daemon=None, self_destroy=False):
-		super().__init__()
+	def __init__(self, worker=None, parent="AUTO", daemon=None, cleanup=None):
+		self.node_name = str(self)
+		
+		self.children = set()
+		
+		self.listeners = {}
+		self.listener_pool = {}
 
+		self.thread = None
+		self.event_que = None
+		self.event_cache = None
+
+		self.suspend = False
+		
 		if worker:
 			self.worker = worker
 			self.node_name = str(worker)
+			
+		if parent == "AUTO" and not worker_pool.is_main():
+			self.parent_node = parent
+		elif isinstance(parent, Worker):
+			self.parent_node = parent
+		else:
+			self.parent_node = None
+		
 		self.daemon = daemon
-		self.self_destroy = self_destroy
+		
+		if cleanup:
+			self.cleanup = cleanup
+					
+		self.callwith_thread = False
+		# try to get thread param from worker
+		try:
+			sig = inspect.signature(self.worker)
+		except ValueError:
+			pass
+		else:
+			for pam in sig.parameters:
+				if pam.name == "thread":
+					self.callwith_thread = True
+					break
 
-		self.reset()
-		self.regist_listener()
-
-	def regist_listener(self):
+		# listen to builtin event
 		@self.listen("STOP_THREAD")
 		def _(event):
 			raise WorkerExit
@@ -130,40 +83,105 @@ class LiveNode(Node):
 				self.suspend = True
 				self.wait_event("RESUME_THREAD", cache=True)
 				self.suspend = False
-
-	def process_event(self, event):
+				
+		@self.listen("CHILD_THREAD_START")
+		def _(event):
+			self.children.add(event.target)
+			
+		@self.listen("CHILD_THREAD_END")
+		def _(event):
+			self.children.remove(event.target)
+			
+	def parent(self, parent_node):
+		"""Setup parent_node"""
+		self.parent_node = parent_node
+		return self
+				
+	def fire(self, event, *args, **kwargs):
+		"""Dispatch an event"""
+		if not isinstance(event, Event):
+			event = Event(event, *args, **kwargs)
 		self.que_event(event)
+		self.transfer_event(event)
+		return self
 
 	def que_event(self, event):
+		"""Que the event"""
 		if not self.thread:
 			return
-		if not self.event_que:
-			self.event_que = queue.Queue()
-		self.event_que.put(event)
+		try:
+			self.event_que.put(event)
+		except AttributeError:
+			pass
 
+	def transfer_event(self, event):
+		"""Bubble or broadcast event"""
+		if event.bubble and self.parent_node:
+			self.parent_node.fire(event)
+
+		if event.broadcast and self.children:
+			for child in self.children:
+				child.fire(event)
+
+	def process_event(self, event):
+		"""Deliver the event to listeners"""
+		if event.name in self.listeners:
+			for listener in self.listeners[event.name]:
+				if listener.target is None or listener.target is event.target:
+					try:
+						listener.callback(event)
+					except Exception as err:
+						print("error occurred in listener: " + self.node_name)
+						traceback.print_exc()
+						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
+
+	def listen(self, event_name, *args, **kwargs):
+		"""This is a decorator. Listen to a specific message. It follows the signature of Listener.
+
+		For example:
+		
+		@self.listen("MESSAGE_NAME")
+		def callback(event):
+			pass
+		"""
+		def listen_message(callback):
+			"""Decorate callback"""
+			listener = Listener(callback, event_name, *args, **kwargs)
+
+			if event_name not in self.listeners:
+				self.listeners[event_name] = []
+
+			self.listeners[event_name].append(listener)
+			self.listener_pool[callback] = listener
+			return callback
+		return listen_message
+
+	def unlisten(self, callback):
+		"""Unlisten a callback"""
+		listener = self.listener_pool[callback]
+		self.listeners[listener.event_name].remove(listener)
+		del self.listener_pool[callback]
+		
 	def is_running(self):
+		"""Check if the thread is running"""
 		return self.thread is not None
 
 	def is_daemon(self):
+		"""Check if the thread is daemon. Daemon can be True, Falase, or None. When daemon is None, it will try to inherit daemon value from its parent"""
 		if self.daemon is not None:
 			return self.daemon
 
 		parent = self.parent_node
-		while parent:
-			if isinstance(parent, LiveNode):
-				return parent.is_daemon()
-			parent = parent.parent_node
+		if parent:
+			return parent.is_daemon()
 		return False
 
 	def worker(self):
+		"""Default worker. Inifinite loop"""
 		self.wait(-1)
 
 	def wait(self, timeout):
-		if not self.event_que:
-			self.event_que = queue.Queue()
-		if not self.event_cache:
-			self.event_cache = queue.Queue()
-
+		"""Wait for timeout. Process events"""
 		ts = time.time()
 		te = ts
 
@@ -175,25 +193,24 @@ class LiveNode(Node):
 					event = self.event_que.get(timeout=timeout - (te - ts) if timeout > 0 else None)
 				except queue.Empty:
 					return
-				super().process_event(event)
+				# FIXME: should we make Node.process_event thread safe?
+				self.process_event(event)
 
 			te = time.time()
 
 	def wait_event(self, name, target=None, cache=False):
-		if not self.event_que:
-			self.event_que = queue.Queue()
-		if not self.event_cache:
-			self.event_cache = queue.Queue()
+		"""Wait for event. Process events and return event data"""
 
 		while not self.event_cache.empty():
-			event = self.message_cache.get_nowait()
+			event = self.event_cache.get_nowait()
 			if name == event.name:
 				if target is None or target == event.target:
 					return event.data
 
 		while True:
 			event = self.event_que.get()
-			super().process_event(event)
+			# FIXME: should we make Node.process_event thread safe?
+			self.process_event(event)
 
 			if event.name == name:
 				if target is None or target == event.target:
@@ -203,21 +220,29 @@ class LiveNode(Node):
 				self.event_cache.put(event)
 
 	def parent_fire(self, *args, **kwargs):
-		if self.parent_node:
+		"""Fire event to parent. Thread safe."""
+		parent = self.parent_node:
+		if parent:
 			self.parent_node.fire(*args, **kwargs)
 
-	def thread_target(self, *args, **kwargs):
-		pool_add(self)
+	def wrap_worker(self, *args, **kwargs):
+		"""Real target to send to threading library"""
+		
+		worker_pool.add(self)
 
 		self.parent_fire("CHILD_THREAD_START", target=self)
 
 		# execute target
 		ret = None
+		err = None
+		if self.callwith_thread:
+			args.insert(self)
 		try:
 			ret = self.worker(*args, **kwargs)
 		except WorkerExit:
 			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
+			err = err
 			print("thread crashed: " + self.node_name)
 			traceback.print_exc()
 			self.parent_fire("CHILD_THREAD_ERROR", data=err, target=self)
@@ -226,33 +251,43 @@ class LiveNode(Node):
 
 		self.parent_fire("CHILD_THREAD_END", target=self)
 
-		pool_remove(self)
-
-		if self.self_destroy and self.parent_node:
-			self.parent_node.remove_child(self)
-
-		stop_node_children(self)
-
-		self.reset()
-
-	def reset(self):
+		# this should prevent child thread from putting event into que
 		self.thread = None
 		self.event_que = None
-		self.event_cache = None
-
-		self.suspend = False
-
+		self.event_cache = None		
+				
+		# stop childrens
+		for child in self.children.copy():
+			if child.is_daemon():
+				child.stop()
+			else:
+				child.stop().join()
+			self.children.remove(child)
+		
+		worker_pool.remove(self)
+		
+		self.cleanup(err, ret)
+		
+	def cleanup(self, err, ret):
+		"""Cleanup function called when thread completely stop"""
+		pass
+		
 	def start(self, *args, **kwargs):
-		"""Start thread"""
+		"""Start thread. Not thread safe. You shouldn't rapidly call this method"""
 		if not self.thread:
-			self.thread = threading.Thread(target=self.thread_target, daemon=self.daemon, args=args, kwargs=kwargs)
+			self.thread = threading.Thread(target=self.wrap_worker, daemon=self.daemon, args=args, kwargs=kwargs)
+			self.event_que = queue.Queue()
+			self.event_cache = queue.Queue()
 			self.thread.start()
 		return self
 
 	def start_as_main(self, *args, **kwargs):
+		"""Overlay on current thread"""
 		if not self.thread:
 			self.thread = threading.current_thread()
-			self.thread_target(*args, **kwargs)
+			self.event_que = queue.Queue()
+			self.event_cache = queue.Queue()
+			self.wrap_worker(*args, **kwargs)
 		return self
 
 	def stop(self):
@@ -262,22 +297,27 @@ class LiveNode(Node):
 
 	def pause(self):
 		"""Pause thread"""
-		if not self.suspend:
-			self.fire("PAUSE_THREAD")
+		self.fire("PAUSE_THREAD")
 		return self
 
 	def resume(self):
 		"""Resume thread"""
 		self.fire("RESUME_THREAD")
 		return self
+		
+	def exit(self):
+		"""Exit thread"""
+		raise WorkerExit
 
 	def join(self):
-		"""thread join method."""
-		if self.thread:
-			self.thread.join()
+		"""thread join method. Thread safe"""
+		real_thread = self.thread
+		if real_thread:
+			real_thread.join()
 		return self
 
 	def async(self, callback, *args, **kwargs):
+		"""Create Async"""
 		return Async(callback, *args, **kwargs)
 
 	def await(self, async):
@@ -288,53 +328,50 @@ class LiveNode(Node):
 		"""Sync call"""
 		async = self.async(callback, *args, **kwargs)
 		return self.await(async)
-
+		
 class Async:
 	"""Async object"""
 
 	def __init__(self, callback, *args, **kwargs):
 		"""Create async object"""
-		self.thread = current_thread()
-		self.child = LiveNode(callback, self_destroy=True, daemon=True)
+		self.child = Worker(callback, parent=None, daemon=True, cleanup=self.cleanup)
+		self.waiting_thread = None
+		self.lock = threading.Lock()
 
 		self.end = False
 		self.ret = None
 		self.err = None
 
-		self.thread.listen("CHILD_THREAD_END", target=self.child)(self.end_callback)
-		self.thread.listen("CHILD_THREAD_DONE", target=self.child)(self.done_callback)
-		self.thread.listen("CHILD_THREAD_ERROR", target=self.child)(self.error_callback)
-
-		self.thread.add_child(self.child)
 		self.child.start(*args, **kwargs)
 
-	def end_callback(self, event):
-		self.end = True
-		self.cleanup()
-
-	def done_callback(self, event):
-		self.ret = event.data
-
-	def error_callback(self, event):
-		self.err = event.data
-
-	def cleanup(self):
-		self.thread.unlisten(self.error_callback)
-		self.thread.unlisten(self.done_callback)
-		self.thread.unlisten(self.end_callback)
+	def cleanup(self, err, ret):
+		"""Cleanup get result"""
+		with self.lock:
+			self.end = True
+			self.ret = ret
+			self.err = err
+			
+			if self.waiting_thread:
+				self.waiting_thread.fire("ASYNC_DONE", target=self.child)
 
 	def get(self):
 		"""Wait for thread ending"""
-		if not self.end:
-			self.thread.wait_event("CHILD_THREAD_END", target=self.child)
+		with self.lock:
+			if self.end:
+				if self.err:
+					raise self.err
+				return self.ret
+			self.waiting_thread = worker_pool.current()
+			
+		# start waiting
+		self.waiting_thread.wait_event("ASYNC_DONE", target=self.child)
 
 		if self.err:
 			raise self.err
-
 		return self.ret
 
-
-class RootNode(LiveNode):
+class RootWorker(Worker):
+	"""Root node. Represent main thread"""
 	def __init__(self):
 		super().__init__()
 		self.thread = threading.main_thread()
@@ -344,82 +381,84 @@ class RootNode(LiveNode):
 			super().wait(*args, **kwargs)
 		except WorkerExit:
 			self.fire("STOP_THREAD", broadcast=True)
-			self.reset()
 
 	def wait_event(self, *args, **kwargs):
 		try:
 			super().wait_event(*args, **kwargs)
 		except WorkerExit:
 			self.fire("STOP_THREAD", broadcast=True)
-			self.reset()
+			
+class Pool:
+	"""Worker pool"""
+	def __init__(self):
+		self.pool = {}
+		self.lock = threading.Lock()
+		
+	def current(self):
+		with self.lock:
+			return self.pool[threading.current_thread()][-1]
 
-class River(LiveNode):
-	def emit(self, event, *args, **kwargs):
-		if not isinstance(event, Event):
-			event = Event(event, *args, **kwargs)
-		self.fire("RIVER_MESSAGE", data=event)
+	def add(self, node):
+		with self.lock:
+			if node.thread not in self.pool:
+				self.pool[node.thread] = []
+			self.pool[node.thread].append(node)
 
-	def regist_listener(self):
-		super().regist_listener()
+	def remove(self, node):
+		with self.lock:
+			if len(self.pool[node.thread]) == 1:
+				del self.pool[node.thread]
+			else:
+				self.pool[node.thread].pop()
+	
+	def is_main(self):
+		return threading.current_thread() is threading.main_thread()
+				
+class Channel:
+	"""Pub, sub channel"""
+	def __init__(self):
+		self.pool = {}
+		self.lock = threading.Lock()
+		
+	def sub(self, name, thread):
+		"""Subscribe to name"""
+		with self.lock:
+			if name not in self.pool:
+				self.pool[name] = []
+			ref = weakref.ref(thread)
+			self.pool[name].append(ref)
+		
+	def pub(self, name, event, *args, **kwargs):
+		"""Publish to name"""
+		with self.lock:
+			if name not in self.pool:
+				return
+			for ref in self.pool[name].copy():
+				if ref():
+					ref().fire(event, *args, **kwargs)
+				else:
+					self.pool[name].remove(ref)
+					if not self.pool[name]:
+						del self.pool[name]
+			
+	def unsub(self, name, thread):
+		"""Unsubscribe to name"""
+		with self.lock:
+			if name not in self.pool:
+				return
+			ref = weakref.ref(thread)
+			self.pool[name].remove(ref)
+			if not self.pool[name]:
+				del self.pool[name]
+				
+worker_pool = Pool()
+worker_pool.add(RootWorker())
 
-		@self.listen("RIVER_MESSAGE")
-		def _(event):
-			if event.data.name in self.watchers:
-				for watcher in self.watchers[event.data.name]:
-					watcher(event)
-
-	def watch(self, event_name, *args, **kwargs):
-
-
-	def worker(self):
-		while True:
-			event = self.wait_event()
-
-@river.watch("OK", watcher=self)
-def _(event):
-	# River sent "OK" to me!
-
-@self.channel("OK")
-def _(event):
-	pass
-
-self.root.fire()
-
-channel["CRAWLER"].fire("MISSION_STATE_CHANGE", data=mission)
-channel["CRAWLER"].enter(self)
-channel["CRAWLER"].leave(self)
-
-river.fire("MISSION_STATE_CHANGE")
-river.enter("MISSION_STATE_CHANGE", self)
-
-# How to auto leave when thread stop?
-
-thread_pool = {}
-
-def current_thread():
-	return thread_pool[threading.current_thread()][-1]
-
-def pool_add(node):
-	if node.thread not in thread_pool:
-		thread_pool[node.thread] = []
-	thread_pool[node.thread].append(node)
-
-def pool_remove(node):
-	if len(thread_pool[node.thread]) == 1:
-		del thread_pool[node.thread]
-	else:
-		thread_pool[node.thread].pop()
-
-pool_add(RootNode())
-
-def stop_node_children(node):
-	if not node.children:
-		return
-
-	for child in node.children:
-		if not isinstance(child, LiveNode):
-			stop_node_children(child)
-		elif child.is_daemon():
-			child.stop()
-		else:
-			child.stop().join()
+channel = Channel()
+		
+# export useful function
+current = worker_pool.current
+is_main = worker_pool.is_main
+pub = channel.pub
+sub = channel.sub
+unsub = channel.unsub
