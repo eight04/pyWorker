@@ -8,7 +8,7 @@ This module was originally included in ComicCrawler_.
 
 Features
 --------
-* Pause, resume, stop, restart thread.
+* Pause, resume, stop thread.
 * Create child thread.
 * Create async tasks.
 * Communicate between threads with Message.
