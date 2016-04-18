@@ -10,15 +10,16 @@ This module was originally included in ComicCrawler_.
 Features
 --------
 
-* Pause, resume, stop thread.
+* Pause, resume, stop and restart thread.
 * Create child thread.
-* Create async tasks.
-* Communicate between threads with Message.
+* Create async task.
+* Communicate between threads with event dispatch.
+* Use channel to broadcast event.
 
 Todos
 -----
 
-* Add priority to listener
+* Nothing to do here.
 
 Install
 -------
