@@ -213,9 +213,18 @@ class Worker:
 
 	def worker(self):
 		"""Default worker. Inifinite loop"""
-		self.wait(-1)
+		self.wait_timeout(-1)
+		
+	def wait(self, param, *args, **kwargs):
+		"""Wait interface. Choose method by type"""
+		if isinstance(param, str):
+			self.wait_event(param, *args, **kwargs)
+		elif isinstance(param, Worker):
+			self.wait_thread(param, *args, **kwargs)
+		else:
+			self.wait_timeout(param, *args, **kwargs)
 
-	def wait(self, timeout):
+	def wait_timeout(self, timeout):
 		"""Wait for timeout. Process events"""
 			
 		time_start = time.time()
