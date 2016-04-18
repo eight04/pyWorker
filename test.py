@@ -1,6 +1,6 @@
 #! python3
 
-import threading, worker
+import threading, worker, gc
 
 from time import sleep
 
@@ -172,15 +172,20 @@ def parent(thread):
 worker.Worker(parent).start().join()
 
 print("test channel pub/sub")
+channel = worker.Channel()
 thread = worker.Worker()
-worker.sub("MY_CHANNEL", thread)
+channel.sub(thread)
 @thread.listen("MY_EVENT")
 def _(event):
 	assert event.data == "MY_DATA"
-	thread.exit()
 thread.start()
-worker.pub("MY_CHANNEL", "MY_EVENT", data="MY_DATA")
-thread.join()
+channel.pub("MY_EVENT", data="MY_DATA")
+
+print("thread should unsub all channels after GC")
+thread.stop().join()
+thread = None
+gc.collect()
+assert len(channel.pool) == 0
 
 print("test listener priority")
 access = []

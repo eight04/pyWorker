@@ -480,48 +480,31 @@ class Pool:
 class Channel:
 	"""Pub, sub channel"""
 	def __init__(self):
-		self.pool = {}
+		self.pool = weakref.WeakSet()
 		self.lock = threading.Lock()
 		
-	def sub(self, name, thread):
-		"""Subscribe to name"""
+	def sub(self, thread):
+		"""Subscribe to channel"""
 		with self.lock:
-			if name not in self.pool:
-				self.pool[name] = []
-			ref = weakref.ref(thread)
-			self.pool[name].append(ref)
+			self.pool.add(thread)
 		
-	def pub(self, name, event, *args, **kwargs):
-		"""Publish to name"""
+	def pub(self, event, *args, **kwargs):
+		"""Publish to channel"""
 		with self.lock:
-			if name not in self.pool:
-				return
-			for ref in self.pool[name].copy():
-				if ref():
-					ref().fire(event, *args, **kwargs)
-				else:
-					self.pool[name].remove(ref)
-					if not self.pool[name]:
-						del self.pool[name]
+			for thread in self.pool:
+				thread.fire(event, *args, **kwargs)
 			
-	def unsub(self, name, thread):
-		"""Unsubscribe to name"""
+	def unsub(self, thread):
+		"""Unsubscribe to channel"""
 		with self.lock:
-			if name not in self.pool:
-				return
-			ref = weakref.ref(thread)
-			self.pool[name].remove(ref)
-			if not self.pool[name]:
-				del self.pool[name]
-				
+			self.pool.remove(thread)
+
+# init worker pool
 worker_pool = Pool()
+
+# init RootWorker
 worker_pool.add(RootWorker())
 
-channel = Channel()
-		
 # export useful function
 current = worker_pool.current
 is_main = worker_pool.is_main
-pub = channel.pub
-sub = channel.sub
-unsub = channel.unsub
