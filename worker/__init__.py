@@ -27,17 +27,19 @@ class Event:
 
 class Listener:
 	"""Event listener"""
-	def __init__(self, callback, event_name, target=None):
+	def __init__(self, callback, event_name, target=None, priority=0):
 		self.callback = callback
 		self.event_name = event_name
 		self.target = target
+		self.priority = priority
 
 class Worker:
 	"""Live message node, integrate with thread"""
-	def __init__(self, worker=None, parent=True, daemon=None, cleanup=None):
+	def __init__(self, worker=None, parent=True, daemon=None):
 		self.node_name = str(self)
 		
 		self.children = set()
+		self.pending = set()
 		
 		self.listeners = {}
 		self.listener_pool = {}
@@ -47,6 +49,9 @@ class Worker:
 		self.event_cache = None
 
 		self.suspend = False
+		
+		self.err = None
+		self.ret = None
 		
 		if worker:
 			self.worker = worker
@@ -58,12 +63,12 @@ class Worker:
 			self.parent_node = worker_pool.current()
 		else:
 			self.parent_node = None
+			
+		if self.parent_node:
+			self.parent_node.children.add(self)
 		
 		self.daemon = daemon
 		
-		if cleanup:
-			self.cleanup = cleanup
-					
 		self.callwith_thread = False
 		# try to get thread param from worker
 		try:
@@ -71,35 +76,48 @@ class Worker:
 		except ValueError:
 			pass
 		else:
-			for pam in sig.parameters:
-				if pam.name == "thread":
+			for name in sig.parameters:
+				if name == "thread":
 					self.callwith_thread = True
 					break
 
 		# listen to builtin event
-		@self.listen("STOP_THREAD")
+		@self.listen("STOP_THREAD", priority=-100)
 		def _(event):
 			"""Stop thread"""
 			raise WorkerExit
 
-		@self.listen("PAUSE_THREAD")
+		@self.listen("PAUSE_THREAD", priority=-100)
 		def _(event):
-			if not self.suspend:
+			if not self.suspend and self.thread:
 				self.suspend = True
 				self.wait_event("RESUME_THREAD", cache=True)
 				self.suspend = False
 				
-		@self.listen("CHILD_THREAD_START")
+		@self.listen("CHILD_THREAD_START", priority=100)
 		def _(event):
 			self.children.add(event.target)
 			
-		@self.listen("CHILD_THREAD_END")
+		@self.listen("CHILD_THREAD_END", priority=-100)
 		def _(event):
 			self.children.remove(event.target)
 			
+		@self.listen("PENDING")
+		def _(event):
+			self.pending.add(event.target)
+			
+		@self.listen("EVENT_REJECT")
+		def _(event):
+			err_event, err_target = event.data
+			if err_event.name == "PENDING":
+				self.fire("PENDING_DONE", target=err_target)
+			
 	def parent(self, parent_node):
 		"""Setup parent_node"""
+		if self.parent_node:
+			self.parent_node.children.remove(self)
 		self.parent_node = parent_node
+		self.parent_node.children.add(self)
 		return self
 				
 	def fire(self, event, *args, **kwargs):
@@ -112,12 +130,11 @@ class Worker:
 
 	def que_event(self, event):
 		"""Que the event"""
-		if not self.thread:
-			return
 		try:
 			self.event_que.put(event)
-		except AttributeError:
-			pass
+		except AttributeError as err:
+			if event.target:
+				event.target.fire("EVENT_REJECT", data=(event, self))
 
 	def transfer_event(self, event):
 		"""Bubble or broadcast event"""
@@ -158,9 +175,14 @@ class Worker:
 			listener = Listener(callback, event_name, *args, **kwargs)
 
 			if event_name not in self.listeners:
-				self.listeners[event_name] = []
-
-			self.listeners[event_name].append(listener)
+				self.listeners[event_name] = [listener]
+			else:
+				i = 0
+				for t_listener in self.listeners[event_name]:
+					if t_listener.priority < listener.priority:
+						break
+					i += 1
+				self.listeners[event_name].insert(i, listener)
 			self.listener_pool[callback] = listener
 			return callback
 		return listen_message
@@ -195,6 +217,7 @@ class Worker:
 
 	def wait(self, timeout):
 		"""Wait for timeout. Process events"""
+			
 		time_start = time.time()
 		time_end = time_start
 
@@ -231,13 +254,19 @@ class Worker:
 
 			if cache:
 				self.event_cache.put(event)
+				
+	def wait_thread(self, thread):
+		"""Wait for thread end"""
+		thread.fire("PENDING", target=self)
+		self.wait_event("PENDING_DONE", target=thread)
+		return (thread.err, thread.ret)
 
 	def parent_fire(self, *args, **kwargs):
 		"""Fire event to parent. Thread safe."""
 		parent = self.parent_node
 		if parent:
 			self.parent_node.fire(*args, **kwargs)
-
+			
 	def wrap_worker(self, *args, **kwargs):
 		"""Real target to send to threading library"""
 		
@@ -246,28 +275,55 @@ class Worker:
 		self.parent_fire("CHILD_THREAD_START", target=self)
 
 		# execute target
-		ret = None
-		err = None
-		if self.callwith_thread:
-			args.insert(self)
+		self.ret = None
+		self.err = None
+			# args.insert(self)
 		try:
-			ret = self.worker(*args, **kwargs)
+			if self.callwith_thread:
+				self.ret = self.worker(*args, self, **kwargs)
+			else:
+				self.ret = self.worker(*args, **kwargs)
 		except WorkerExit:
 			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
-			err = err
+			self.err = err
 			print("thread crashed: " + self.node_name)
 			traceback.print_exc()
 			self.parent_fire("CHILD_THREAD_ERROR", data=err, target=self)
 		else:
-			self.parent_fire("CHILD_THREAD_DONE", data=ret, target=self)
-
-		self.parent_fire("CHILD_THREAD_END", target=self)
-
-		# this should prevent child thread from putting event into que
-		self.thread = None
+			self.parent_fire("CHILD_THREAD_DONE", data=self.ret, target=self)
+			
+		# remove from pool
+		worker_pool.remove(self)
+		
+		# cache the event que
+		event_que = self.event_que
+		
+		# mark thread as end
 		self.event_que = None
 		self.event_cache = None		
+		self.thread = None
+		
+		# cleanup event que
+		while True:
+			try:
+				event = event_que.get_nowait()
+				self.process_event(event)
+			except queue.Empty:
+				break
+			except WorkerExit:
+				pass
+			except BaseException as err:
+				print("Uncaught BaseException during cleanup: " + self.node_name)
+				traceback.print_exc()
+				
+		# tell parent thread end
+		self.parent_fire("CHILD_THREAD_END", data=(self.err, self.ret), target=self)
+		
+		# tell pending thread end
+		for thread in self.pending.copy():
+			thread.fire("PENDING_DONE", target=self)
+			self.pending.remove(thread)
 				
 		# stop childrens
 		for child in self.children.copy():
@@ -276,14 +332,6 @@ class Worker:
 			else:
 				child.stop().join()
 			self.children.remove(child)
-		
-		worker_pool.remove(self)
-		
-		self.cleanup(err, ret)
-		
-	def cleanup(self, err, ret):
-		"""Cleanup function called when thread completely stop"""
-		pass
 		
 	def start(self, *args, **kwargs):
 		"""Start thread. Not thread safe. You shouldn't rapidly call this 
@@ -353,50 +401,29 @@ class Worker:
 		
 class Async:
 	"""Async object"""
-
 	def __init__(self, callback, *args, **kwargs):
-		"""Create async object"""
-		self.child = Worker(callback, parent=None, daemon=True, cleanup=self.cleanup)
-		self.waiting_thread = None
-		self.lock = threading.Lock()
-
-		self.end = False
-		self.ret = None
-		self.err = None
-
-		self.child.start(*args, **kwargs)
-
-	def cleanup(self, err, ret):
-		"""Cleanup get result"""
-		with self.lock:
-			self.end = True
-			self.ret = ret
-			self.err = err
-			
-			if self.waiting_thread:
-				self.waiting_thread.fire("ASYNC_DONE", target=self.child)
+		"""Create async thread"""
+		if isinstance(callback, Worker):
+			self.thread = callback
+		else:
+			self.thread = Worker(callback, parent=None, daemon=True)
+		self.thread.start(*args, **kwargs)
 
 	def get(self):
 		"""Wait for thread ending"""
-		with self.lock:
-			if self.end:
-				if self.err:
-					raise self.err
-				return self.ret
-			self.waiting_thread = worker_pool.current()
-			
-		# start waiting
-		self.waiting_thread.wait_event("ASYNC_DONE", target=self.child)
-
-		if self.err:
-			raise self.err
-		return self.ret
+		err, ret = worker_pool.current().wait_thread(self.thread)
+		
+		if err:
+			raise err
+		return ret
 
 class RootWorker(Worker):
 	"""Root node. Represent main thread"""
 	def __init__(self):
 		super().__init__()
 		self.thread = threading.main_thread()
+		self.event_que = queue.Queue()
+		self.event_cache = queue.Queue()
 
 	def wait(self, *args, **kwargs):
 		try:
