@@ -68,6 +68,8 @@ class Worker:
 		self.err = None
 		self.ret = None
 		
+		self.async_handle = None
+		
 		if worker:
 			self.worker = worker
 			self.node_name = str(worker)
@@ -131,6 +133,8 @@ class Worker:
 		"""Dispatch an event. See Event for arguments."""
 		if not isinstance(event, Event):
 			event = Event(event, *args, **kwargs)
+		if not event.target:
+			event.target = current()
 		self.que_event(event)
 		self.transfer_event(event)
 		return self
@@ -152,7 +156,7 @@ class Worker:
 		try:
 			self.event_que.put(event)
 		except AttributeError as err:
-			if event.target:
+			if event.target and event.target is not self:
 				event.target.fire("EVENT_REJECT", data=(event, self))
 
 	def transfer_event(self, event):
@@ -173,7 +177,7 @@ class Worker:
 					except Exception as err:
 						print("Error occurred in listener: " + self.node_name)
 						traceback.print_exc()
-						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
+						self.fire("LISTENER_ERROR", data=err, bubble=True)
 
 	def listen(self, event_name, *args, **kwargs):
 		"""This is a decorator.
@@ -248,7 +252,7 @@ class Worker:
 
 	def wait_thread(self, thread):
 		"""Wait for thread end"""
-		thread.fire("PENDING", target=self)
+		thread.fire("PENDING")
 		self.wait_event("PENDING_DONE", target=thread)
 		return (thread.err, thread.ret)
 
@@ -310,8 +314,10 @@ class Worker:
 	def wrap_worker(self, *args, **kwargs):
 		"""Real target to send to threading.Thread."""
 		
+		# add to pool
 		worker_pool.add(self)
 
+		# tell parent start
 		self.parent_fire("CHILD_THREAD_START")
 
 		# execute target
@@ -333,11 +339,9 @@ class Worker:
 		else:
 			self.parent_fire("CHILD_THREAD_DONE", data=self.ret)
 			
-		# remove from pool
-		worker_pool.remove(self)
-		
-		# cache the event que
+		# cache some data for later use
 		event_que = self.event_que
+		native_thread = self.thread
 		
 		# mark thread as end
 		self.event_que = None
@@ -362,8 +366,13 @@ class Worker:
 		
 		# tell pending thread end
 		for thread in self.pending.copy():
-			thread.fire("PENDING_DONE", target=self)
+			thread.fire("PENDING_DONE")
 			self.pending.remove(thread)
+			
+		# close async handle
+		if self.async_handle:
+			self.async_handle.stop()
+			self.async_handle = None
 				
 		# stop childrens
 		for child in self.children.copy():
@@ -373,6 +382,9 @@ class Worker:
 				child.stop().join()
 			self.children.remove(child)
 			
+		# remove from pool
+		worker_pool.remove(native_thread)
+		
 	def update(self):
 		"""Process all event inside event queue"""
 		while True:
@@ -461,7 +473,10 @@ class Async:
 
 	def get(self):
 		"""Wait thread to end"""
-		err, ret = worker_pool.current().wait_thread(self.thread)
+		handle = current()
+		handle.async_handle = self.thread
+		err, ret = handle.wait_thread(self.thread)
+		handle.async_handle = None
 		if err:
 			raise err
 		return ret
@@ -507,13 +522,13 @@ class Pool:
 				self.pool[node.thread] = []
 			self.pool[node.thread].append(node)
 
-	def remove(self, node):
+	def remove(self, thread):
 		"""Remove worker from pool"""
 		with self.lock:
-			if len(self.pool[node.thread]) == 1:
-				del self.pool[node.thread]
+			if len(self.pool[thread]) == 1:
+				del self.pool[thread]
 			else:
-				self.pool[node.thread].pop()
+				self.pool[thread].pop()
 	
 	def is_main(self, thread=None):
 		"""Check if the thread is main thread"""
