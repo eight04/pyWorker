@@ -171,7 +171,7 @@ class Worker:
 					try:
 						listener.callback(event)
 					except Exception as err:
-						print("error occurred in listener: " + self.node_name)
+						print("Error occurred in listener: " + self.node_name)
 						traceback.print_exc()
 						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
 
@@ -224,7 +224,7 @@ class Worker:
 		"""Default worker. Inifinite loop"""
 		self.wait_forever()
 		
-	def wait(self, param=None, *args, **kwargs):
+	def wait(self, param, *args, **kwargs):
 		"""Wait method.
 		
 		Choose method by the type of first argument. See Worker.wait_timeout,
@@ -236,71 +236,64 @@ class Worker:
 			return self.wait_thread(param, *args, **kwargs)
 		if isinstance(param, Async):
 			return param.get()
-		if param is None:
-			return self.wait_forever()
-		return self.wait_timeout(param, *args, **kwargs)
-
-	def wait_timeout(self, timeout):
-		"""Wait for timeout, in seconds.
-
-		If timeout == -1, it will wait forever.
-		"""
-			
-		time_start = time.time()
-		time_end = time_start
+		return self.wait_timeout(param)
 		
-		while time_end - time_start <= timeout:
-			try:
-				self.event_cache.get_nowait()
-			except queue.Empty
-				break
-			time_end = time.time()
+	def wait_timeout(self, timeout):
+		"""Wait for timeout (in seconds)"""
+		return self.wait_event(None, timeout=timeout)
 
-		while time_end - time_start <= timeout:
-			time_wait = timeout - (time_end - time_start)
-			try:
-				event = self.event_que.get(timeout=time_wait)
-			except queue.Empty:
-				return
-			else:
-				self.process_event(event)
-			time_end = time.time()
-			
 	def wait_forever(self):
-		"""Wait forever"""
-		while True:
-			event = self.event_que.get()
-			self.process_event(event)
+		"""Wait forever. Event loop."""
+		return self.wait_event(None)
 
-	def wait_event(self, name, target=None, cache=False):
-		"""Wait for event. Return Event.data.
-
-		target - if provided, event.target must match target.
-		cache  - it will cache event after processed. Used in PAUSE event.
-		"""
-		while not self.event_cache.empty():
-			event = self.event_cache.get_nowait()
-			if name == event.name:
-				if target is None or target == event.target:
-					return event.data
-
-		while True:
-			event = self.event_que.get()
-			self.process_event(event)
-
-			if event.name == name:
-				if target is None or target == event.target:
-					return event.data
-
-			if cache:
-				self.event_cache.put(event)
-				
 	def wait_thread(self, thread):
 		"""Wait for thread end"""
 		thread.fire("PENDING", target=self)
 		self.wait_event("PENDING_DONE", target=thread)
 		return (thread.err, thread.ret)
 
+	def wait_event(self, name, timeout=None, target=None, cache=False):
+		"""Wait for specific event. Return Event.data
+
+		timeout  If provided, return None when time up (in seconds).
+		target   If provided, event.target must match target.
+		cache    Cache event after processed. Used in PAUSE event.
+		"""
+		if timeout:
+			end_time = time.time() + timeout
+		else:
+			end_time = None
+			
+		while True:
+			try:
+				event = self.event_cache.get_nowait()
+			except queue.Empty:
+				break
+			else:
+				if name == event.name:
+					if target is None or target == event.target:
+						return event.data
+				if end_time and time.time() > end_time:
+					return
+
+		if end_time:
+			timeout = end_time - time.time()
+			
+		while timeout is None or timeout > 0:
+			try:
+				event = self.event_que.get(timeout=timeout)
+				self.process_event(event)
+			except queue.Empty:
+				# timeup
+				return	
+			if event.name == name:
+				if not target or target == event.target:
+					return event.data
+			if cache:
+				self.event_cache.put(event)
+			if end_time:
+				timeout = end_time - time.time()
+				
 	def parent_fire(self, *args, **kwargs):
 		"""Fire event on parent."""
 		parent = self.parent_node
@@ -334,7 +327,7 @@ class Worker:
 			self.parent_fire("CHILD_THREAD_STOP")
 		except BaseException as err:
 			self.err = err
-			print("thread crashed: " + self.node_name)
+			print("Thread crashed: " + self.node_name)
 			traceback.print_exc()
 			self.parent_fire("CHILD_THREAD_ERROR", data=err)
 		else:
@@ -361,7 +354,7 @@ class Worker:
 			except WorkerExit:
 				pass
 			except BaseException:
-				print("Uncaught BaseException in listener")
+				print("Error occured in listener cleanup: " + self.node_name)
 				traceback.print_exc()
 		
 		# tell parent thread end
@@ -480,6 +473,21 @@ class RootWorker(Worker):
 		self.thread = threading.main_thread()
 		self.event_que = queue.Queue()
 		self.event_cache = queue.Queue()
+		
+	def wait_event(self, *args, **kwargs):
+		"""Suppress WorkerExit and BaseException"""
+		try:
+			super().wait_event(*args, **kwargs)
+		except WorkerExit:
+			self.broadcast("STOP_THREAD")
+		except BaseException:
+			print("Uncaught BaseException in main thread wait_event")
+			traceback.print_exc()
+	
+	@staticmethod
+	def exit():
+		"""This method should do nothing with main thread"""
+		pass
 			
 class Pool:
 	"""Worker pool"""
