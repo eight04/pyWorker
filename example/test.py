@@ -1,6 +1,6 @@
 #! python3
 
-import threading, worker, gc
+import env, threading, worker, gc
 
 from time import sleep
 from worker import current, Worker
