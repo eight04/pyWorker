@@ -9,8 +9,6 @@ https://github.com/pypa/sampleproject
 
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
-# To use a consistent encoding
-from codecs import open
 from os import path
 
 import re
@@ -20,7 +18,7 @@ here = path.abspath(path.dirname(__file__))
 # Get the long description from the relevant file
 def read(file):
 	with open(path.join(here, file), encoding='utf-8') as f:
-		content = f.read().replace("\r\n", "\n")
+		content = f.read()
 	return content
 	
 def find_version(file):
