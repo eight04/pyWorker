@@ -35,39 +35,39 @@ Basic
 
 ::
 
-	#! python3
+#! python3
 
-	from worker import Worker
+	from worker import Worker, sleep
 
 	count = None
 
-	def increaser(thread):
+	def increaser():
 		global count
 		count = 1
 		while True:
 			print(count)
 			count += 1
-			thread.wait(1)
+			sleep(1)
 
-	ic = Worker(increaser)
+	thread = Worker(increaser)
 
 	while True:
 		command = input("input command: ")
 
 		if command == "pause":
-			ic.pause()
+			thread.pause()
 
 		if command == "resume":
-			ic.resume()
+			thread.resume()
 
 		if command == "stop":
-			ic.stop()
+			thread.stop()
 			
 		if command == "start":
-			ic.start()
+			thread.start()
 
 		if command == "exit":
-			ic.stop()
+			thread.stop()
 			break
 
 Async task
@@ -76,8 +76,7 @@ Async task
 
 	#! python3
 
-	from worker import Async
-	from time import sleep
+	from worker import Async, sleep
 
 	def long_work(t):
 		sleep(t)
@@ -97,14 +96,16 @@ Listen to event
 
 	from worker import Worker
 
-	def work(thread):
+	def create_printer():
+		thread = Worker()
+		
 		@thread.listen("PRINT")
 		def _(event):
 			print(event.data)
+			
+		return thread.start()
 
-		thread.wait_forever()
-
-	thread = Worker(work).start()
+	thread = create_printer()
 	thread.fire("PRINT", "Hello thread!")
 	thread.stop()
 	
@@ -116,61 +117,49 @@ Subscribe to channel
 
 	from worker import Worker, Channel
 
-	channel = Channel()
-
-	def work(thread):
-		channel.sub(thread)
-		
+	def create_worker():
+		thread = Worker()
 		@thread.listen("PRINT")
 		def _(event):
 			print(event.data)
+		channel.sub(thread)
+		return thread.start()
 
-		thread.wait_forever()
-
-	thread = Worker(work).start()
+	channel = Channel()
+	thread = create_worker()
 	channel.pub("PRINT", "Hello channel!")
 	thread.stop()
 
-Child thread
+Child thread and bubble/broadcast
 
 ::
 
 	#! python3
 
-	from worker import Worker
-	from time import sleep
+	import env
 
-	def grand(thread):
-		hello = False
+	from worker import Worker, sleep
+
+	def create_worker(name, parent):
+		thread = Worker(parent=parent)
 		@thread.listen("HELLO")
 		def _(event):
-			print("grand")
-			nonlocal hello
-			if not hello:
-				hello = True
-				thread.fire("HELLO", bubble=True) # message bubbling is happenened in grand thread
-		thread.wait_forever()
-
-	def child(thread):
-		@thread.listen("HELLO")
-		def _(event):
-			print("child")
-		Worker(grand).start()
-		thread.wait_forever()
-
-	def parent(thread):
-		@thread.listen("HELLO")
-		def _(event):
-			print("parent")
-		Worker(child).start()
-			
-		thread.wait_forever()
+			print(name)
+		return thread.start()
 		
-	thread = Worker(parent).start()
-	sleep(1) # message broadcasting is happened in main thread, so the child thread might not be created yet.
-	thread.fire("HELLO", broadcast=True)
+	parent = create_worker("parent", None).start()
+	child = create_worker("child", parent).start()
+	grand = create_worker("grand", child).start()
+		
+	# broadcast/bubble is happened in main thread. It doesn't gaurantee
+	# the execute order of listeners.
+	parent.fire("HELLO", broadcast=True)
 	sleep(1)
-	thread.stop()
+	grand.fire("HELLO", bubble=True)
+	sleep(1)
+
+	# the thread will try to stop its children when thread end
+	parent.stop()
 
 Notes
 -----
