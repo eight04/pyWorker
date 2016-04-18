@@ -139,13 +139,13 @@ assert broadcast
 
 parent.stop()
 
-print("starting as main will stack on current thread")
+print("start_overlay will stack on current thread")
 class MyWorker(worker.Worker):
 	def worker(self, param, hello=None):
 		assert param == "Hello world!"
 		assert hello == "Hello"
 		assert worker.current() is self
-MyWorker().start_as_main("Hello world!", hello="Hello").join()
+MyWorker().start_overlay("Hello world!", hello="Hello")
 
 # The folowing tests relate to: http://stackoverflow.com/questions/3752618/python-adding-element-to-list-while-iterating
 print("one-time listener")
