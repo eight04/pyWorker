@@ -127,20 +127,24 @@ class Worker:
 			if err_event.name == "PENDING":
 				self.fire("PENDING_DONE", target=err_target)
 			
-	def parent(self, parent_node):
-		"""Set parent thread. You shouldn't change parent after thread started."""
-		if self.parent_node:
-			self.parent_node.children.remove(self)
-		self.parent_node = parent_node
-		self.parent_node.children.add(self)
-		return self
-				
 	def fire(self, event, *args, **kwargs):
 		"""Dispatch an event. See Event for arguments."""
 		if not isinstance(event, Event):
 			event = Event(event, *args, **kwargs)
 		self.que_event(event)
 		self.transfer_event(event)
+		return self
+		
+	def bubble(self, *args, **kwargs):
+		"""Bubble event from parent"""
+		kwargs["bubble"] = True
+		self.parent_fire(*args, **kwargs)
+		return self
+		
+	def broadcast(self, *args, **kwargs):
+		"""Broadcast event from children"""
+		kwargs["broadcast"] = True
+		self.children_fire(*args, **kwargs)
 		return self
 
 	def que_event(self, event):
@@ -227,11 +231,12 @@ class Worker:
 		Worker.wait_event, and Worker.wait_thread.
 		"""
 		if isinstance(param, str):
-			self.wait_event(param, *args, **kwargs)
-		elif isinstance(param, Worker):
-			self.wait_thread(param, *args, **kwargs)
-		else:
-			self.wait_timeout(param, *args, **kwargs)
+			return self.wait_event(param, *args, **kwargs)
+		if isinstance(param, Worker):
+			return self.wait_thread(param, *args, **kwargs)
+		if isinstance(param, Async):
+			return param.get()
+		return self.wait_timeout(param, *args, **kwargs)
 
 	def wait_timeout(self, timeout):
 		"""Wait for timeout, in seconds.
@@ -287,10 +292,12 @@ class Worker:
 		"""Fire event on parent."""
 		parent = self.parent_node
 		if parent:
+			kwargs["target"] = self
 			self.parent_node.fire(*args, **kwargs)
 			
 	def children_fire(self, *args, **kwargs):
 		"""Fire event on children."""
+		kwargs["target"] = self
 		for child in self.children.copy():
 			child.fire(*args, **kwargs)
 
@@ -299,7 +306,7 @@ class Worker:
 		
 		worker_pool.add(self)
 
-		self.parent_fire("CHILD_THREAD_START", target=self)
+		self.parent_fire("CHILD_THREAD_START")
 
 		# execute target
 		self.ret = None
@@ -311,14 +318,14 @@ class Worker:
 		try:
 			self.ret = self.worker(*args, **kwargs)
 		except WorkerExit:
-			self.parent_fire("CHILD_THREAD_STOP", target=self)
+			self.parent_fire("CHILD_THREAD_STOP")
 		except BaseException as err:
 			self.err = err
 			print("thread crashed: " + self.node_name)
 			traceback.print_exc()
-			self.parent_fire("CHILD_THREAD_ERROR", data=err, target=self)
+			self.parent_fire("CHILD_THREAD_ERROR", data=err)
 		else:
-			self.parent_fire("CHILD_THREAD_DONE", data=self.ret, target=self)
+			self.parent_fire("CHILD_THREAD_DONE", data=self.ret)
 			
 		# remove from pool
 		worker_pool.remove(self)
@@ -345,7 +352,7 @@ class Worker:
 				traceback.print_exc()
 				
 		# tell parent thread end
-		self.parent_fire("CHILD_THREAD_END", data=(self.err, self.ret), target=self)
+		self.parent_fire("CHILD_THREAD_END", data=(self.err, self.ret))
 		
 		# tell pending thread end
 		for thread in self.pending.copy():
@@ -423,15 +430,10 @@ class Worker:
 		return Async(callback, *args, **kwargs)
 
 	@staticmethod
-	def await(async):
-		"""Wait async to return"""
-		return async.get()
-
-	@staticmethod
 	def sync(callback, *args, **kwargs):
 		"""Sync call"""
 		return Async(callback, *args, **kwargs).get()
-		
+				
 class Async:
 	"""Async object"""
 	def __init__(self, callback, *args, **kwargs):
@@ -452,7 +454,7 @@ class Async:
 class RootWorker(Worker):
 	"""Root worker. Represent main thread"""
 	def __init__(self):
-		super().__init__()
+		super().__init__(parent=None)
 		self.thread = threading.main_thread()
 		self.event_que = queue.Queue()
 		self.event_cache = queue.Queue()
@@ -483,10 +485,12 @@ class Pool:
 			else:
 				self.pool[node.thread].pop()
 	
-	@staticmethod
-	def is_main():
-		"""Check if the current thread is main thread"""
-		return threading.current_thread() is threading.main_thread()
+	def is_main(self, thread=None):
+		"""Check if the thread is main thread"""
+		if not thread:
+			thread = self.current()
+		with self.lock:
+			return thread is self.pool[threading.main_thread()][-1]
 				
 class Channel:
 	"""Channel class.
