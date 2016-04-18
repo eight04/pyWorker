@@ -222,9 +222,9 @@ class Worker:
 
 	def worker(self):
 		"""Default worker. Inifinite loop"""
-		self.wait_timeout(-1)
+		self.wait_forever()
 		
-	def wait(self, param, *args, **kwargs):
+	def wait(self, param=None, *args, **kwargs):
 		"""Wait method.
 		
 		Choose method by the type of first argument. See Worker.wait_timeout,
@@ -236,6 +236,8 @@ class Worker:
 			return self.wait_thread(param, *args, **kwargs)
 		if isinstance(param, Async):
 			return param.get()
+		if param is None:
+			return self.wait_forever()
 		return self.wait_timeout(param, *args, **kwargs)
 
 	def wait_timeout(self, timeout):
@@ -246,18 +248,29 @@ class Worker:
 			
 		time_start = time.time()
 		time_end = time_start
-
-		while time_end - time_start <= timeout or timeout < 0:
-			if not self.event_cache.empty():
-				event = self.event_cache.get_nowait()
-			else:
-				try:
-					event = self.event_que.get(timeout=timeout - (time_end - time_start) if timeout > 0 else None)
-				except queue.Empty:
-					return
-				self.process_event(event)
-
+		
+		while time_end - time_start <= timeout:
+			try:
+				self.event_cache.get_nowait()
+			except queue.Empty
+				break
 			time_end = time.time()
+
+		while time_end - time_start <= timeout:
+			time_wait = timeout - (time_end - time_start)
+			try:
+				event = self.event_que.get(timeout=time_wait)
+			except queue.Empty:
+				return
+			else:
+				self.process_event(event)
+			time_end = time.time()
+			
+	def wait_forever(self):
+		"""Wait forever"""
+		while True:
+			event = self.event_que.get()
+			self.process_event(event)
 
 	def wait_event(self, name, target=None, cache=False):
 		"""Wait for event. Return Event.data.
@@ -338,7 +351,7 @@ class Worker:
 		self.event_cache = None		
 		self.thread = None
 		
-		# cleanup event que
+		# cleanup queue
 		while True:
 			try:
 				event = event_que.get_nowait()
@@ -347,10 +360,10 @@ class Worker:
 				break
 			except WorkerExit:
 				pass
-			except BaseException as err:
-				print("Uncaught BaseException during cleanup: " + self.node_name)
+			except BaseException:
+				print("Uncaught BaseException in listener")
 				traceback.print_exc()
-				
+		
 		# tell parent thread end
 		self.parent_fire("CHILD_THREAD_END", data=(self.err, self.ret))
 		
@@ -366,7 +379,16 @@ class Worker:
 			else:
 				child.stop().join()
 			self.children.remove(child)
-		
+			
+	def update(self):
+		"""Process all event inside event queue"""
+		while True:
+			try:
+				event = self.event_que.get_nowait()
+				self.process_event(event)
+			except queue.Empty:
+				break
+			
 	def start(self, *args, **kwargs):
 		"""Start thread. The arguments will be pass into Worker.worker"""
 		if not self.thread:
