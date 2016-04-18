@@ -28,14 +28,25 @@ class Event:
 class Listener:
 	"""Event listener"""
 	def __init__(self, callback, event_name, target=None, priority=0):
+		"""Init event. The callback will be executed with priority order."""
 		self.callback = callback
 		self.event_name = event_name
 		self.target = target
 		self.priority = priority
 
 class Worker:
-	"""Live message node, integrate with thread"""
+	"""Main Worker class"""
 	def __init__(self, worker=None, parent=True, daemon=None):
+		"""Init worker.
+		
+		worker - the threading target. If worker is None, it will use 
+		         Worker.worker as target.
+		parent - the parent thread. If parent is True (default), it will use 
+		         current thread as parent thread.
+		daemon - daemon thread. See Worker.is_daemon. If the thread is not a 
+		         daemon thread, its parent will do child.join() when stopped.
+		"""
+		
 		self.node_name = str(self)
 		
 		self.children = set()
@@ -113,7 +124,7 @@ class Worker:
 				self.fire("PENDING_DONE", target=err_target)
 			
 	def parent(self, parent_node):
-		"""Setup parent_node"""
+		"""Set parent thread. You shouldn't change parent after thread started."""
 		if self.parent_node:
 			self.parent_node.children.remove(self)
 		self.parent_node = parent_node
@@ -121,7 +132,7 @@ class Worker:
 		return self
 				
 	def fire(self, event, *args, **kwargs):
-		"""Dispatch an event"""
+		"""Dispatch an event. See Event for arguments."""
 		if not isinstance(event, Event):
 			event = Event(event, *args, **kwargs)
 		self.que_event(event)
@@ -144,13 +155,8 @@ class Worker:
 		if event.broadcast:
 			self.children_fire(event)
 			
-	def children_fire(self, event):
-		"""Fire event on children."""
-		for child in self.children.copy():
-			child.fire(event)
-
 	def process_event(self, event):
-		"""Deliver the event to listeners"""
+		"""Deliver the event to listeners."""
 		if event.name in self.listeners:
 			for listener in self.listeners[event.name]:
 				if listener.target is None or listener.target is event.target:
@@ -162,14 +168,9 @@ class Worker:
 						self.fire("LISTENER_ERROR", data=err, target=self, bubble=True)
 
 	def listen(self, event_name, *args, **kwargs):
-		"""This is a decorator. Listen to a specific message. It follows the signature of Listener.
-
-		For example:
+		"""This is a decorator.
 		
-		@self.listen("MESSAGE_NAME")
-		def callback(event):
-			pass
-		"""
+		Listen to a specific message. See Listener for arguments."""
 		def listen_message(callback):
 			"""Decorate callback"""
 			listener = Listener(callback, event_name, *args, **kwargs)
@@ -198,10 +199,10 @@ class Worker:
 		return self.thread is not None
 
 	def is_daemon(self):
-		"""Check if the thread is daemon. Daemon can be True, Falase, or None.
+		"""Check if the thread is daemon.
 		
-		When daemon is None, it will try to inherit daemon value from its 
-		parent.
+		When Worker.daemon is None, it will try to inherit daemon value from
+		its parent.
 		"""
 		if self.daemon is not None:
 			return self.daemon
@@ -216,7 +217,11 @@ class Worker:
 		self.wait_timeout(-1)
 		
 	def wait(self, param, *args, **kwargs):
-		"""Wait interface. Choose method by type"""
+		"""Wait method.
+		
+		Choose method by the type of first argument. See Worker.wait_timeout,
+		Worker.wait_event, and Worker.wait_thread.
+		"""
 		if isinstance(param, str):
 			self.wait_event(param, *args, **kwargs)
 		elif isinstance(param, Worker):
@@ -225,7 +230,10 @@ class Worker:
 			self.wait_timeout(param, *args, **kwargs)
 
 	def wait_timeout(self, timeout):
-		"""Wait for timeout. Process events"""
+		"""Wait for timeout, in seconds.
+
+		If timeout == -1, it will wait forever.
+		"""
 			
 		time_start = time.time()
 		time_end = time_start
@@ -238,14 +246,16 @@ class Worker:
 					event = self.event_que.get(timeout=timeout - (time_end - time_start) if timeout > 0 else None)
 				except queue.Empty:
 					return
-				# FIXME: should we make Node.process_event thread safe?
 				self.process_event(event)
 
 			time_end = time.time()
 
 	def wait_event(self, name, target=None, cache=False):
-		"""Wait for event. Process events and return event data"""
+		"""Wait for event. Return Event.data.
 
+		target - if provided, event.target must match target.
+		cache  - it will cache event after processed. Used in PAUSE event.
+		"""
 		while not self.event_cache.empty():
 			event = self.event_cache.get_nowait()
 			if name == event.name:
@@ -254,7 +264,6 @@ class Worker:
 
 		while True:
 			event = self.event_que.get()
-			# FIXME: should we make Node.process_event thread safe?
 			self.process_event(event)
 
 			if event.name == name:
@@ -271,13 +280,18 @@ class Worker:
 		return (thread.err, thread.ret)
 
 	def parent_fire(self, *args, **kwargs):
-		"""Fire event to parent. Thread safe."""
+		"""Fire event on parent."""
 		parent = self.parent_node
 		if parent:
 			self.parent_node.fire(*args, **kwargs)
 			
+	def children_fire(self, *args, **kwargs):
+		"""Fire event on children."""
+		for child in self.children.copy():
+			child.fire(*args, **kwargs)
+
 	def wrap_worker(self, *args, **kwargs):
-		"""Real target to send to threading library"""
+		"""Real target to send to threading.Thread."""
 		
 		worker_pool.add(self)
 
@@ -286,12 +300,12 @@ class Worker:
 		# execute target
 		self.ret = None
 		self.err = None
-			# args.insert(self)
+
+		if self.callwith_thread:
+			kwargs["thread"] = self
+			
 		try:
-			if self.callwith_thread:
-				self.ret = self.worker(*args, self, **kwargs)
-			else:
-				self.ret = self.worker(*args, **kwargs)
+			self.ret = self.worker(*args, **kwargs)
 		except WorkerExit:
 			self.parent_fire("CHILD_THREAD_STOP", target=self)
 		except BaseException as err:
@@ -343,13 +357,12 @@ class Worker:
 			self.children.remove(child)
 		
 	def start(self, *args, **kwargs):
-		"""Start thread. Not thread safe. You shouldn't rapidly call this 
-		method"""
+		"""Start thread. The arguments will be pass into Worker.worker"""
 		if not self.thread:
 			self.thread = threading.Thread(
                 target=self.wrap_worker,
 				daemon=self.daemon,
-				args=args, 
+				args=args,
 				kwargs=kwargs
 			)	
 			self.event_que = queue.Queue()
@@ -357,8 +370,10 @@ class Worker:
 			self.thread.start()
 		return self
 
-	def start_as_main(self, *args, **kwargs):
-		"""Overlay on current thread"""
+	def start_overlay(self, *args, **kwargs):
+		"""Overlay on current thread.
+		
+		Should only use when you want the worker runs on current thread."""
 		if not self.thread:
 			self.thread = threading.current_thread()
 			self.event_que = queue.Queue()
@@ -382,7 +397,12 @@ class Worker:
 		return self
 		
 	def join(self):
-		"""thread join method. Thread safe"""
+		"""Native thread.join.
+		
+		thread.join() is a little different with current().wait(thread). Since
+		it use native join, it will block until native thread stop. But 
+		wait(thread) is not blocking and will return immediately after thread
+		exit."""
 		real_thread = self.thread
 		if real_thread:
 			real_thread.join()
@@ -395,12 +415,12 @@ class Worker:
 
 	@staticmethod
 	def async(callback, *args, **kwargs):
-		"""Create Async"""
+		"""Create Async object"""
 		return Async(callback, *args, **kwargs)
 
 	@staticmethod
 	def await(async):
-		"""Wait async return"""
+		"""Wait async to return"""
 		return async.get()
 
 	@staticmethod
@@ -411,7 +431,7 @@ class Worker:
 class Async:
 	"""Async object"""
 	def __init__(self, callback, *args, **kwargs):
-		"""Create async thread"""
+		"""Create async thread. callback can be a worker or an callable."""
 		if isinstance(callback, Worker):
 			self.thread = callback
 		else:
@@ -419,32 +439,19 @@ class Async:
 		self.thread.start(*args, **kwargs)
 
 	def get(self):
-		"""Wait for thread ending"""
+		"""Wait thread to end"""
 		err, ret = worker_pool.current().wait_thread(self.thread)
-		
 		if err:
 			raise err
 		return ret
 
 class RootWorker(Worker):
-	"""Root node. Represent main thread"""
+	"""Root worker. Represent main thread"""
 	def __init__(self):
 		super().__init__()
 		self.thread = threading.main_thread()
 		self.event_que = queue.Queue()
 		self.event_cache = queue.Queue()
-
-	def wait(self, *args, **kwargs):
-		try:
-			super().wait(*args, **kwargs)
-		except WorkerExit:
-			self.fire("STOP_THREAD", broadcast=True)
-
-	def wait_event(self, *args, **kwargs):
-		try:
-			super().wait_event(*args, **kwargs)
-		except WorkerExit:
-			self.fire("STOP_THREAD", broadcast=True)
 			
 class Pool:
 	"""Worker pool"""
@@ -478,7 +485,11 @@ class Pool:
 		return threading.current_thread() is threading.main_thread()
 				
 class Channel:
-	"""Pub, sub channel"""
+	"""Channel class.
+	
+	Every events published to the channel will be broadcast to all subscribed
+	threads.
+	"""
 	def __init__(self):
 		self.pool = weakref.WeakSet()
 		self.lock = threading.Lock()
@@ -488,11 +499,11 @@ class Channel:
 		with self.lock:
 			self.pool.add(thread)
 		
-	def pub(self, event, *args, **kwargs):
-		"""Publish to channel"""
+	def pub(self, *args, **kwargs):
+		"""Publish event to channel. See Worker.fire for arguments."""
 		with self.lock:
 			for thread in self.pool:
-				thread.fire(event, *args, **kwargs)
+				thread.fire(*args, **kwargs)
 			
 	def unsub(self, thread):
 		"""Unsubscribe to channel"""
