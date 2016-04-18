@@ -1,5 +1,6 @@
 pyThreadWorker
 ==============
+
 A threading library written in python. Help you build threaded app.
 
 This module was originally included in ComicCrawler_.
@@ -8,6 +9,7 @@ This module was originally included in ComicCrawler_.
 
 Features
 --------
+
 * Pause, resume, stop thread.
 * Create child thread.
 * Create async tasks.
@@ -15,38 +17,41 @@ Features
 
 Todos
 -----
+
 * Add priority to listener
 
 Install
 -------
+
 ::
 
 	pip install pythreadworker
 
 Usage
 -----
-Use function as target::
+
+Basic
+
+::
 
 	#! python3
 
 	from worker import Worker
 
-	count = 1
+	count = None
 
 	def increaser(thread):
 		global count
+		count = 1
 		while True:
+			print(count)
 			count += 1
 			thread.wait(1)
 
 	ic = Worker(increaser)
-	ic.start()
 
 	while True:
-		command = input("print|pause|resume|stop|exit: ")
-
-		if command == "print":
-			print(count)
+		command = input("input command: ")
 
 		if command == "pause":
 			ic.pause()
@@ -56,215 +61,115 @@ Use function as target::
 
 		if command == "stop":
 			ic.stop()
+			
+		if command == "start":
+			ic.start()
 
 		if command == "exit":
 			ic.stop()
-			ic.join()
 			break
 
-Parent, child thread::
+Async task
+
+::
 
 	#! python3
 
-	from worker import Worker
-
-	p_thread = None
-	c_thread = None
-
-	def parent(thread):
-		global p_thread, c_thread
-
-		p_thread = thread
-		c_thread = thread.create_child(child)
-		c_thread.start()
-
-		thread.message_loop()
-
-	def child(thread):
-		thread.message_loop()
-
-	Worker(parent).start()
-
-	while True:
-		command = input("print|stop|exit: ")
-
-		if command == "print":
-			print("p_thread.is_running(): {}\nc_thread.is_running(): {}".format(
-				p_thread.is_running(),
-				c_thread.is_running()
-			))
-
-		if command == "stop":
-			p_thread.stop()
-
-		if command == "exit":
-			p_thread.stop()
-			p_thread.join()
-			break
-
-Async task::
-
-	#! python3
-
-	from worker import Worker
+	from worker import Async
 	from time import sleep
 
 	def long_work(t):
 		sleep(t)
 		return "Finished in {} second(s)".format(t)
 
-	lw_thread = Worker.async(long_work, 5)
+	async = Async(long_work, 5)
 
 	# Do other stuff here...
 
-	print(lw_thread.get())
+	print(async.get())
 
-Async + parent/child::
+Listen to event
 
-	#! python3
-
-	from worker import Worker
-	from time import sleep
-
-	p_thread = None
-	c_thread = None
-
-	def long_work(t):
-		sleep(t)
-		return "Finished in {} second(s)".format(t)
-
-	def parent(thread):
-		global p_thread, c_thread
-
-		p_thread = thread
-		async = thread.async(long_work, 5)
-		c_thread = async.thread
-
-		# Do other stuff here...
-
-		print(thread.await(async))
-
-	Worker(parent).start()
-
-	while True:
-		command = input("print|stop|exit: ")
-
-		if command == "print":
-			print("p_thread.is_running(): {}\nc_thread.is_running(): {}".format(
-				p_thread.is_running(),
-				c_thread.is_running()
-			))
-
-		if command == "stop":
-			p_thread.stop()
-
-		if command == "exit":
-			p_thread.stop()
-			p_thread.join()
-			break
-
-Message::
+::
 
 	#! python3
 
 	from worker import Worker
 
 	def work(thread):
-		@thread.listen("hello")
-		def _():
-			return "world!"
+		@thread.listen("PRINT")
+		def _(event):
+			print(event.data)
 
-		@thread.listen("ok")
-		def _():
-			return "cool"
+		thread.wait(-1) # -1 will create infinite loop
 
-		thread.message_loop()
+	thread = Worker(work).start()
+	thread.fire("PRINT", "Hello thread!")
+	thread.stop()
+	
+Subscribe to channel
 
-	w_thread = Worker(work)
-	w_thread.start()
+::
 
-	while True:
-		command = input("<message>|exit: ")
+	#! python3
 
-		if command == "exit":
-			w_thread.stop()
-			w_thread.join()
-			break
+	from worker import Worker, Channel
 
-		else:
-			message = w_thread.message(command)
+	channel = Channel()
 
-			# Do other stuff here...
+	def work(thread):
+		channel.sub(thread)
+		
+		@thread.listen("PRINT")
+		def _(event):
+			print(event.data)
 
-			print(message.get())
+		thread.wait(-1)
 
-Message + parent/child::
+	thread = Worker(work).start()
+	channel.pub("PRINT", "Hello channel!")
+	thread.stop()
+
+Child thread
+
+::
 
 	#! python3
 
 	from worker import Worker
 	from time import sleep
 
-	def odd_man(thread):
+	def grand(thread):
+		hello = False
+		@thread.listen("HELLO")
+		def _(event):
+			print("grand")
+			nonlocal hello
+			if not hello:
+				hello = True
+				thread.fire("HELLO", bubble=True) # message bubbling is happenened in grand thread
+		thread.wait(-1)
 
-		@thread.listen("hey")
-		def _(number):
-			print(number)
-			sleep(1)
-			thread.bubble("hey", number + 1)
+	def child(thread):
+		@thread.listen("HELLO")
+		def _(event):
+			print("child")
+		Worker(grand).start()
+		thread.wait(-1)
 
-		thread.message_loop()
-
-	def even_man(thread):
-
-		@thread.listen("hey")
-		def _(number):
-			print(number)
-			sleep(1)
-			thread.broadcast("hey", number + 1)
-
-		od_thread = thread.create_child(odd_man)
-		od_thread.start()
-
-		thread.message("hey", 0)
-
-		thread.message_loop()
-
-	w_thread = Worker(even_man)
-
-	while True:
-		command = input("start|stop|exit: ")
-
-		if command == "start":
-			w_thread.start()
-
-		if command == "stop":
-			w_thread.stop()
-
-		if command == "exit":
-			w_thread.stop()
-			w_thread.join()
-			break
-
-Clean up threads on exit::
-
-	#! python3
-
-	from worker import Worker, global_cleanup
-
-	def loop(thread):
-		thread.message_loop()
-
-	# if you doesn't hold the reference, the thread become daemon thread.
-	Worker(loop).start()
-
-	# pyWorker provide a cleanup function to stop all threads.
-	global_cleanup()
-
-Known issues
-------------
-* If there is an error in `worker.sync`, the error message will be printed
-  twice, once in the child thread and once in the parent.
+	def parent(thread):
+		@thread.listen("HELLO")
+		def _(event):
+			print("parent")
+		Worker(child).start()
+			
+		thread.wait(-1)
+		
+	thread = Worker(parent).start()
+	sleep(1) # message broadcasting is happened in main thread, so the child thread might not be created yet.
+	thread.fire("HELLO", broadcast=True)
+	sleep(1)
+	thread.stop()
 
 Notes
 -----
