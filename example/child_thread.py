@@ -11,9 +11,9 @@ def create_worker(name, parent):
 		print(name)
 	return thread.start()
 	
-parent = create_worker("parent", None).start()
-child = create_worker("child", parent).start()
-grand = create_worker("grand", child).start()
+parent = create_worker("parent", None)
+child = create_worker("child", parent)
+grand = create_worker("grand", child)
 	
 # broadcast/bubble is happened in main thread. It doesn't gaurantee
 # the execute order of listeners.
