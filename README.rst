@@ -19,7 +19,7 @@ Features
 Todos
 -----
 
-* Nothing to do here.
+* Let wait_event be able to accept timeout?
 
 Install
 -------
@@ -102,7 +102,7 @@ Listen to event
 		def _(event):
 			print(event.data)
 
-		thread.wait(-1) # -1 will create infinite loop
+		thread.wait_forever()
 
 	thread = Worker(work).start()
 	thread.fire("PRINT", "Hello thread!")
@@ -125,7 +125,7 @@ Subscribe to channel
 		def _(event):
 			print(event.data)
 
-		thread.wait(-1)
+		thread.wait_forever()
 
 	thread = Worker(work).start()
 	channel.pub("PRINT", "Hello channel!")
@@ -149,14 +149,14 @@ Child thread
 			if not hello:
 				hello = True
 				thread.fire("HELLO", bubble=True) # message bubbling is happenened in grand thread
-		thread.wait(-1)
+		thread.wait_forever()
 
 	def child(thread):
 		@thread.listen("HELLO")
 		def _(event):
 			print("child")
 		Worker(grand).start()
-		thread.wait(-1)
+		thread.wait_forever()
 
 	def parent(thread):
 		@thread.listen("HELLO")
@@ -164,7 +164,7 @@ Child thread
 			print("parent")
 		Worker(child).start()
 			
-		thread.wait(-1)
+		thread.wait_forever()
 		
 	thread = Worker(parent).start()
 	sleep(1) # message broadcasting is happened in main thread, so the child thread might not be created yet.
@@ -174,10 +174,13 @@ Child thread
 
 Notes
 -----
+
 * Thread safe operations: http://effbot.org/pyfaq/what-kinds-of-global-value-mutation-are-thread-safe.htm
 
 Changelog
 ---------
+
 * Version 0.3.0 (Jun 14, 2015)
-	- Catch BaseException.
+
+  - Catch BaseException.
 
