@@ -171,7 +171,7 @@ def parent(thread):
 	assert child.parent_node == thread
 worker.Worker(parent).start().join()
 
-print("pub/sub")
+print("test channel pub/sub")
 thread = worker.Worker()
 worker.sub("MY_CHANNEL", thread)
 @thread.listen("MY_EVENT")
@@ -181,6 +181,33 @@ def _(event):
 thread.start()
 worker.pub("MY_CHANNEL", "MY_EVENT", data="MY_DATA")
 thread.join()
+
+print("test listener priority")
+access = []
+thread = worker.Worker()
+@thread.listen("MY_EVENT", priority=3)
+def _(event):
+	print(3)
+	access.append(1)
+@thread.listen("MY_EVENT", priority=3)
+def _(event):
+	print("another 3")
+	access.append(2)
+@thread.listen("MY_EVENT", priority=3)
+def _(event):
+	print("3nd 3")
+	access.append(3)
+@thread.listen("MY_EVENT", priority=1)
+def _(event):
+	print(1)
+	access.append(5)
+	thread.exit()
+@thread.listen("MY_EVENT", priority=2)
+def _(event):
+	print(2)
+	access.append(4)
+thread.start().fire("MY_EVENT").join()
+assert access == [1, 2, 3, 4, 5]
 
 print("only main thread is left")
 assert len(worker.worker_pool.pool) == 1
