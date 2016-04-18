@@ -521,7 +521,7 @@ class Pool:
 			thread = self.current()
 		with self.lock:
 			return thread is self.pool[threading.main_thread()][-1]
-				
+			
 class Channel:
 	"""Channel class.
 	
@@ -548,6 +548,10 @@ class Channel:
 		with self.lock:
 			self.pool.remove(thread)
 
+def sleep(timeout):
+	"""Sleep shortcut"""
+	return worker_pool.current().wait(timeout)
+			
 # init worker pool
 worker_pool = Pool()
 
