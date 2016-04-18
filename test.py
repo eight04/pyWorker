@@ -3,6 +3,7 @@
 import threading, worker, gc
 
 from time import sleep
+from worker import current, Worker
 
 # Basic operations
 print("thread operations: start/pause/resume/stop/join")
@@ -48,7 +49,7 @@ thread.join()
 
 print("stop parent thread will cause child to stop too")
 parent = worker.Worker()
-child = worker.Worker().parent(parent)
+child = worker.Worker(parent=parent)
 parent.start()
 child.start()
 parent.stop().join()
@@ -64,7 +65,7 @@ thread = worker.Worker().start()
 assert not thread.is_daemon()
 
 print("child thread will inherit default value from parent node")
-child = worker.Worker().parent(thread).start()
+child = worker.Worker(parent=thread).start()
 assert thread.is_daemon() == child.is_daemon()
 
 print("parent should wait till none-daemon child thread stop")
@@ -85,7 +86,7 @@ assert not child.is_running()
 
 print("a thread will detached from parent on finished")
 thread = worker.current()
-child = worker.Worker().parent(thread).start()
+child = worker.Worker(parent=thread).start()
 child.stop()
 thread.wait("CHILD_THREAD_END", target=child)
 assert child not in thread.children
@@ -96,12 +97,12 @@ def long_work(timeout):
 	sleep(timeout)
 	return "Finished in {} seconds".format(timeout)
 async = thread.async(long_work, 1)
-assert thread.await(async) == "Finished in 1 seconds"
+assert thread.wait(async) == "Finished in 1 seconds"
 
 print("async task, let child finished before getting")
 async = thread.async(long_work, 1)
 sleep(2)
-assert thread.await(async) == "Finished in 1 seconds"
+assert thread.wait(async) == "Finished in 1 seconds"
 
 print("use Async class")
 async = worker.Async(long_work, 1)
@@ -111,34 +112,24 @@ sleep(2)
 assert async.get() == "Finished in 1 seconds"
 
 print("Test bubble/broadcast message")
-bubble = False
-broadcast = False
-
-parent = worker.Worker()
-@parent.listen("Some bubble event")
+access = {}
+parent = worker.Worker(parent=current()).start()
+child = worker.Worker(parent=parent).start()
+grand = worker.Worker(parent=child).start()
+@parent.listen("MY_BUBBLE")
 def _(event):
-	global bubble
-	bubble = True
-	
-child = worker.Worker().parent(parent).start()
-@child.listen("Some broadcast event")
+	assert event.target == grand
+	access["parent"] = True
+@grand.listen("MY_BROADCAST")
 def _(event):
-	global broadcast
-	broadcast = True
+	assert event.target == parent
+	access["grand"] = True
+parent.broadcast("MY_BROADCAST")
+grand.bubble("MY_BUBBLE")
+sleep(1)
+assert access == {"parent": True, "grand": True}
+parent.stop().join()
 	
-parent.start()
-child.start()
-	
-child.fire("Some bubble event", bubble=True)
-parent.fire("Some broadcast event", broadcast=True)
-
-sleep(0.1)
-
-assert bubble
-assert broadcast
-
-parent.stop()
-
 print("start_overlay will stack on current thread")
 class MyWorker(worker.Worker):
 	def worker(self, param, hello=None):
