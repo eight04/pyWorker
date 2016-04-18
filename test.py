@@ -1,10 +1,8 @@
 #! python3
 
-import threading
+import threading, worker
 
 from time import sleep
-from worker import Worker, Async, current, worker_pool
-
 
 # Basic operations
 print("thread operations: start/pause/resume/stop/join")
@@ -18,29 +16,39 @@ def increaser(thread):
 		count = event.data
 
 	while True:
-		thread.wait(0.1)
+		thread.wait(1)
 		count += 1
+		print(count)
 
-thread = Worker(increaser).start()
-sleep(0.55)
+thread = worker.Worker(increaser).start()
+sleep(5.5)
+print("time goes 5.5 seconds")
 assert count == 5
+print("pause thread")
 thread.pause()
+sleep(2)
+assert count == 5
+print("reset value")
 thread.fire("reset", 0)
-sleep(0.15)
+sleep(2)
 assert count == 0
+print("resume thread")
 thread.resume()
-sleep(0.05)
+sleep(0.5)
 assert count == 1
-sleep(0.4)
+print("keep going")
+sleep(4)
 assert count == 5
+print("stop thread")
 thread.stop()
-sleep(0.15)
+sleep(2)
 assert count == 5
+print("join thread")
 thread.join()
 
 print("stop parent thread will cause child to stop too")
-parent = Worker()
-child = Worker().parent(parent)
+parent = worker.Worker()
+child = worker.Worker().parent(parent)
 parent.start()
 child.start()
 parent.stop().join()
@@ -48,59 +56,71 @@ assert not parent.is_running()
 assert not child.is_running()
 
 print("main thread is not daemon thread")
-thread = current()
+thread = worker.current()
 assert not thread.is_daemon()
 
 print("a thread is not daemon thread by the default")
-thread = Worker().start()
+thread = worker.Worker().start()
 assert not thread.is_daemon()
 
 print("child thread will inherit default value from parent node")
-child = Worker().parent(thread).start()
+child = worker.Worker().parent(thread).start()
 assert thread.is_daemon() == child.is_daemon()
 
 print("parent should wait till none-daemon child thread stop")
 thread.stop().join()
 assert not child.is_running()
 
+print("parent thread will not wait till daemon thread end")
+def child_worker():
+	sleep(1)
+parent = worker.Worker()
+child = worker.Worker(child_worker, parent=parent, daemon=True)
+parent.start()
+child.start()
+parent.stop().join()
+assert child.is_running()
+child.join()
+assert not child.is_running()
+
 print("a thread will detached from parent on finished")
-thread = current()
-child = Worker().parent(thread).start()
+thread = worker.current()
+child = worker.Worker().parent(thread).start()
 child.stop()
-thread.wait_event("CHILD_THREAD_END", target=child)
+thread.wait("CHILD_THREAD_END", target=child)
 assert child not in thread.children
 
 print("async task, let parent wait child")
-thread = current()
+thread = worker.current()
 def long_work(timeout):
 	sleep(timeout)
 	return "Finished in {} seconds".format(timeout)
-async = thread.async(long_work, 0.1)
-assert thread.await(async) == "Finished in 0.1 seconds"
+async = thread.async(long_work, 1)
+assert thread.await(async) == "Finished in 1 seconds"
 
 print("async task, let child finished before getting")
-async = thread.async(long_work, 0.1)
-sleep(0.2)
-assert thread.await(async) == "Finished in 0.1 seconds"
+async = thread.async(long_work, 1)
+sleep(2)
+assert thread.await(async) == "Finished in 1 seconds"
 
 print("use Async class")
-async = Async(long_work, 0.1)
-assert async.get() == "Finished in 0.1 seconds"
-async = Async(long_work, 0.1)
-sleep(0.2)
-assert async.get() == "Finished in 0.1 seconds"
+async = worker.Async(long_work, 1)
+assert async.get() == "Finished in 1 seconds"
+async = worker.Async(long_work, 1)
+sleep(2)
+assert async.get() == "Finished in 1 seconds"
 
 print("Test bubble/broadcast message")
 bubble = False
 broadcast = False
 
-parent = Worker()
+parent = worker.Worker()
 @parent.listen("Some bubble event")
 def _(event):
 	global bubble
 	bubble = True
 	
-child = Worker().parent(parent).start()
+child = worker.Worker().parent(parent).start()
 @child.listen("Some broadcast event")
 def _(event):
 	global broadcast
@@ -120,16 +140,16 @@ assert broadcast
 parent.stop()
 
 print("starting as main will stack on current thread")
-class MyWorker(Worker):
+class MyWorker(worker.Worker):
 	def worker(self, param, hello=None):
 		assert param == "Hello world!"
 		assert hello == "Hello"
-		assert current() is self
+		assert worker.current() is self
 MyWorker().start_as_main("Hello world!", hello="Hello").join()
 
 # The folowing tests relate to: http://stackoverflow.com/questions/3752618/python-adding-element-to-list-while-iterating
 print("one-time listener")
-thread = Worker().start()
+thread = worker.Worker().start()
 @thread.listen("test")
 def _(event):
 	thread.unlisten(_)
@@ -147,10 +167,21 @@ thread.stop().join()
 
 print("auto setup parent")
 def parent(thread):
-	child = Worker().start()
+	child = worker.Worker().start()
 	assert child.parent_node == thread
-Worker(parent).start().join()
+worker.Worker(parent).start().join()
+
+print("pub/sub")
+thread = worker.Worker()
+worker.sub("MY_CHANNEL", thread)
+@thread.listen("MY_EVENT")
+def _(event):
+	assert event.data == "MY_DATA"
+	thread.exit()
+thread.start()
+worker.pub("MY_CHANNEL", "MY_EVENT", data="MY_DATA")
+thread.join()
 
 print("only main thread is left")
-assert len(worker_pool.pool) == 1
+assert len(worker.worker_pool.pool) == 1
 assert threading.active_count() == 1
