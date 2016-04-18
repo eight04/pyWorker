@@ -16,7 +16,7 @@ class WorkerExit(BaseException):
 	pass
 
 class Event:
-	"""Event"""
+	"""Event data"""
 	def __init__(self, name, data=None, bubble=False, broadcast=False, target=None):
 		self.name = name
 		self.data = data
@@ -28,7 +28,11 @@ class Event:
 class Listener:
 	"""Event listener"""
 	def __init__(self, callback, event_name, target=None, priority=0):
-		"""Init event. The callback will be executed with priority order."""
+		"""Init Listener.
+		
+		When worker process a event, the listeners will be executed in priority
+		order.
+		"""
 		self.callback = callback
 		self.event_name = event_name
 		self.target = target
