@@ -8,7 +8,7 @@ https://github.com/pypa/sampleproject
 """
 
 # Always prefer setuptools over distutils
-from setuptools import setup, find_packages
+from setuptools import setup
 from os import path
 
 import re
@@ -24,17 +24,17 @@ def read(file):
 def find_version(file):
 	return re.search(r"__version__ = (\S*)", read(file)).group(1).strip("\"'")
 	
-settings = {
-	"name": "pythreadworker",
-	"version": find_version("worker/__init__.py"),
-	"description": 'A threading library written in python',
-	"long_description": read("README.rst"),
-	"url": 'https://github.com/eight04/pyWorker',
-	"author": 'eight',
-	"author_email": 'eight04@gmail.com',
-	"license": 'MIT',
+setup(
+	name="pythreadworker",
+	version=find_version("worker/__init__.py"),
+	description='A threading library written in python',
+	long_description=read("README.rst"),
+	url='https://github.com/eight04/pyWorker',
+	author='eight',
+	author_email='eight04@gmail.com',
+	license='MIT',
 	# See https://pypi.python.org/pypi?%3Aaction=list_classifiers
-	"classifiers": [
+	classifiers=[
 		'Development Status :: 5 - Production/Stable',
 
 		# Indicate who your project is intended for
@@ -46,11 +46,10 @@ settings = {
 
 		# Specify the Python versions you support here. In particular, ensure
 		# that you indicate whether you support Python 2, Python 3 or both.
-		'Programming Language :: Python :: 3.4'
+		'Programming Language :: Python :: 3.4',
+		'Programming Language :: Python :: 3.5'
 	],
-	"keywords": 'thread',
-	"packages": find_packages(),
+	keywords='thread threading worker',
+	packages=["worker"],
 }
 
-if __name__ == "__main__":	
-	setup(**settings)
