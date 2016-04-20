@@ -7,7 +7,7 @@ A threaded worker, implemented with message queue and parent/child pattern.
 
 import queue, threading, traceback, time, inspect, weakref
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 class WorkerExit(BaseException):
 	"""Raise this error will exit current thread. The user can use
