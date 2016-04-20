@@ -13,13 +13,8 @@ Features
 * Pause, resume, stop and restart thread.
 * Create child thread.
 * Create async task.
-* Communicate between threads with event dispatch.
+* Communicate between threads with events.
 * Use channel to broadcast event.
-
-Todos
------
-
-* Let wait_event be able to accept timeout?
 
 Install
 -------
@@ -35,7 +30,7 @@ Basic
 
 ::
 
-#! python3
+	#! python3
 
 	from worker import Worker, sleep
 
@@ -149,14 +144,13 @@ Child thread and bubble/broadcast
 	child = create_worker("child", parent)
 	grand = create_worker("grand", child)
 		
-	# broadcast/bubble is happened in main thread. It doesn't gaurantee
-	# the execute order of listeners.
+	# broadcast/bubble is happened in main thread. It doesn't gaurantee the execution order of listeners.
 	parent.fire("HELLO", broadcast=True)
 	sleep(1)
 	grand.fire("HELLO", bubble=True)
 	sleep(1)
 
-	# the thread will try to stop its children when thread end
+	# stop a thread will cause its children to stop
 	parent.stop()
 
 Notes
@@ -167,7 +161,25 @@ Notes
 Changelog
 ---------
 
-* Version 0.3.0 (Jun 14, 2015)
+* 0.4.0 (Apr 20, 2016)
+
+  - Interface completely changed:
+  
+    - Drop ``Message.put, .get``
+    - Drop ``UserWorker``
+    - Drop ``Worker.create_child``. Use ``parent`` option in constructor instead.
+    - Drop ``global_cleanup``
+    - Add ``sleep``
+    - Add ``current``
+    - Add ``Channel``
+    - Add ``Listener.priority``
+    - Add ``daemon`` option to ``Worker``
+    - ``Worker.cleanup`` --> ``Worker.update``
+    - ``Worker.message`` --> ``Worker.fire``
+    - ``Worker.wait_message`` --> ``Worker.wait_event``
+    - ``Worker.message_loop`` --> ``Worker.wait_forever``
+
+* 0.3.0 (Jun 14, 2015)
 
   - Catch BaseException.
 
