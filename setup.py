@@ -35,6 +35,6 @@ setup(
 		'Programming Language :: Python :: 3.5'
 	],
 	keywords='thread threading worker',
-	packages=["worker"],
-}
+	packages=["worker"]
+)
 
