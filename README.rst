@@ -161,23 +161,26 @@ Notes
 Changelog
 ---------
 
+* 0.5.0 (Apr 22, 2016)
+
+  - Add sync.
+
 * 0.4.0 (Apr 20, 2016)
 
-  - Interface completely changed:
-  
-    - Drop ``Message.put, .get``
-    - Drop ``UserWorker``
-    - Drop ``Worker.create_child``. Use ``parent`` option in constructor instead.
-    - Drop ``global_cleanup``
-    - Add ``sleep``
-    - Add ``current``
-    - Add ``Channel``
-    - Add ``Listener.priority``
-    - Add ``daemon`` option to ``Worker``
-    - ``Worker.cleanup`` --> ``Worker.update``
-    - ``Worker.message`` --> ``Worker.fire``
-    - ``Worker.wait_message`` --> ``Worker.wait_event``
-    - ``Worker.message_loop`` --> ``Worker.wait_forever``
+  - Interface completely changed
+  - Drop ``Message.put, .get``
+  - Drop ``UserWorker``
+  - Drop ``Worker.create_child``. Use ``parent`` option in constructor instead.
+  - Drop ``global_cleanup``
+  - Add ``sleep``
+  - Add ``current``
+  - Add ``Channel``
+  - Add ``Listener.priority``
+  - Add ``daemon`` option to ``Worker``
+  - ``Worker.cleanup`` --> ``Worker.update``
+  - ``Worker.message`` --> ``Worker.fire``
+  - ``Worker.wait_message`` --> ``Worker.wait_event``
+  - ``Worker.message_loop`` --> ``Worker.wait_forever``
 
 * 0.3.0 (Jun 14, 2015)
 
