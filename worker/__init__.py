@@ -565,6 +565,7 @@ class Channel:
 
 def sleep(timeout):
 	"""Sleep shortcut"""
+	timeout = float(timeout)
 	return worker_pool.current().wait(timeout)
 	
 def sync(*args, **kwargs):
