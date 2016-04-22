@@ -566,6 +566,10 @@ class Channel:
 def sleep(timeout):
 	"""Sleep shortcut"""
 	return worker_pool.current().wait(timeout)
+	
+def sync(*args, **kwargs):
+	"""Sync shortcut"""
+	return Async(*args, **kwargs).get()
 			
 # init worker pool
 worker_pool = Pool()
