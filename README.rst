@@ -161,6 +161,10 @@ Notes
 Changelog
 ---------
 
+* 0.5.1 (Apr 22, 2016)
+
+  - Use float in sleep function.
+
 * 0.5.0 (Apr 22, 2016)
 
   - Add sync.
