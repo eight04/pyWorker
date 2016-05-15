@@ -1,7 +1,7 @@
-from xcute import cute, Bump, Version
+from xcute import cute, Bump, Version, Exc
 
 cute(
-	test = 'setup check -r',
+	test = 'readme_build',
 	bump_pre = 'test',
 	bump = Bump('worker/__init__.py'),
 	bump_post = ['dist', 'release', 'publish', 'install'],
@@ -17,6 +17,10 @@ cute(
 	],
 	install = 'pip install -e .',
 	install_err = 'elevate -c -w pip install -e .',
-	readme = 'python setup.py --long-description > %temp%/ld && rst2html --no-raw %temp%/ld %temp%/ld.html && start %temp%/ld.html',
+	readme_build = 'python setup.py --long-description > %temp%/ld && rst2html --no-raw --exit-status=1 --verbose %temp%/ld %temp%/ld.html',
+	readme_build_err = ['readme_show', Exc()],
+	readme_show = 'start %temp%/ld.html',
+	readme = 'readme_build',
+	readme_post = 'readme_show',
 	version = [Version('worker/__init__.py'), 'echo {version}']
 )
