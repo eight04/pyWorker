@@ -169,7 +169,7 @@ Changelog
 
   - Add sync.
 
-* 0.4.0 (Apr 20, 2016)
+* 0.4.0 (Apr 20, 2016) **breaking change**
 
   - Interface completely changed
   - Drop ``Message.put, .get``
