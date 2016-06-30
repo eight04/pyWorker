@@ -1,7 +1,7 @@
 from xcute import cute, Bump, Version, Exc
 
 cute(
-	test = 'readme_build',
+	test = ['python test.py', 'readme_build'],
 	bump_pre = 'test',
 	bump = Bump('worker/__init__.py'),
 	bump_post = ['dist', 'release', 'publish', 'install'],
