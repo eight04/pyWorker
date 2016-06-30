@@ -161,6 +161,10 @@ Notes
 Changelog
 ---------
 
+* 0.6.0 (Jul 1, 2016)
+
+  - Add ``thread.later``.
+
 * 0.5.1 (Apr 22, 2016)
 
   - Use float in sleep function.
