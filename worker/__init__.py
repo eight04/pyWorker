@@ -128,6 +128,11 @@ class Worker:
 			err_event, err_target = event.data
 			if err_event.name == "PENDING":
 				self.fire("PENDING_DONE", target=err_target)
+				
+		@self.listen("EXECUTE")
+		def _(event):
+			callback, args, kwargs = event.data
+			callback(*args, **kwargs)
 			
 	def fire(self, event, *args, **kwargs):
 		"""Dispatch an event. See Event for arguments."""
@@ -460,11 +465,21 @@ class Worker:
 	def sync(callback, *args, **kwargs):
 		"""Sync call"""
 		return Async(callback, *args, **kwargs).get()
+		
+	def later(self, callback, time, *args, **kwargs):
+		"""Call the @callback after @time seconds."""
+		cmd = (callback, args, kwargs)
+		Worker(later_worker, daemon=True).start(cmd, time, self)
+		
+def later_worker(cmd, time, handle):
+	"""Delay worker"""
+	sleep(time)
+	handle.fire("EXECUTE", cmd)
 				
 class Async:
 	"""Async object"""
 	def __init__(self, callback, *args, **kwargs):
-		"""Create async thread. callback can be a worker or an callable."""
+		"""Create async thread. callback can be a worker or a callable."""
 		if isinstance(callback, Worker):
 			self.thread = callback
 		else:
@@ -480,7 +495,7 @@ class Async:
 		if err:
 			raise err
 		return ret
-
+		
 class RootWorker(Worker):
 	"""Root worker. Represent main thread"""
 	def __init__(self):
@@ -571,6 +586,10 @@ def sleep(timeout):
 def sync(*args, **kwargs):
 	"""Sync shortcut"""
 	return Async(*args, **kwargs).get()
+	
+def later(*args, **kwargs):
+	"""Later shortcut"""
+	return worker_pool.current().later(*args, **kwargs)
 			
 # init worker pool
 worker_pool = Pool()
