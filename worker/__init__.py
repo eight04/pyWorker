@@ -234,7 +234,9 @@ class Worker:
                         self.fire("LISTENER_ERROR", data=err, bubble=True)
 
     def listen(self, event_name, *args, **kwargs):
-        """This is a decorator. Listen/handle specific events. Use it like::
+        """This is a decorator. Listen/handle specific events. Use it like:
+        
+        .. code:: python
         
             @listen("EVENT_NAME")
             def handler(event):
@@ -604,7 +606,9 @@ class Worker:
     @classmethod
     def partial(cls, *args, **kwargs):
         """A decorator to convert a function into a Worker object, for
-        convenience::
+        convenience:
+        
+        .. code:: python
         
             @Worker
             def thread1():
