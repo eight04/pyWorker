@@ -1,5 +1,5 @@
 [MESSAGES CONTROL]
-disable=multiple-imports, too-few-public-methods, function-redefined, broad-except, trailing-whitespace, missing-docstring, redefined-outer-name
+disable=multiple-imports, too-few-public-methods, function-redefined, broad-except, trailing-whitespace, missing-docstring, redefined-outer-name, too-many-public-methods, too-many-instance-attributes
 
 [VARIABLES]
 dummy-variables-rgx=(_+[a-zA-Z0-9_]*?$)|dummy|event

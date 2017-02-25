@@ -369,12 +369,10 @@ class Worker:
                 event = self.event_cache.get_nowait()
             except queue.Empty:
                 break
-            else:
-                if name == event.name:
-                    if target is None or target == event.target:
-                        return event.data
-                if end_time and time.time() > end_time:
-                    return
+            if name == event.name and (not target or target == event.target):
+                return event.data
+            if end_time and time.time() > end_time:
+                return
 
         if end_time:
             timeout = end_time - time.time()
@@ -386,9 +384,8 @@ class Worker:
             except queue.Empty:
                 # timeup
                 return
-            if event.name == name:
-                if not target or target == event.target:
-                    return event.data
+            if event.name == name and (not target or target == event.target):
+                return event.data
             if cache:
                 self.event_cache.put(event)
             if end_time:
