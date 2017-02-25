@@ -11,7 +11,7 @@ to :class:`Worker` instead of builtin :class:`threading.Thread`.
 
 import queue, threading, traceback, time, inspect, weakref, sys
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 SHORTCUTS = [
     "bubble", "broadcast", "listen", "unlisten", "wait",
