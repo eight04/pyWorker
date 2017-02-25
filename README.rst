@@ -1,6 +1,10 @@
 pyThreadWorker
 ==============
 
+.. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=latest
+	:target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
+	:alt: Documentation Status
+
 A threading library written in python. Help you build threaded app.
 
 This module was originally included in ComicCrawler_.
@@ -121,9 +125,9 @@ Use Channel to broadcast event:
 	foo.stop()
 	bar.stop()
 
-Child thread and bubble/broadcast:
+Child thread and event bubbling/broadcasting:
 
-::
+.. code:: python
 
 	#! python3
 
@@ -151,6 +155,10 @@ Child thread and bubble/broadcast:
 
 	# stop a thread would also stop its children
 	parent.stop()
+	
+API reference
+-------------
+http://pythreadworker.readthedocs.io/en/latest/
 
 Notes
 -----
