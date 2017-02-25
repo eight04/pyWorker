@@ -2,8 +2,8 @@ pyThreadWorker
 ==============
 
 .. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=latest
-	:target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
-	:alt: Documentation Status
+  :target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
+  :alt: Documentation Status
 
 A threading library written in python. Help you build threaded app.
 
@@ -25,7 +25,7 @@ Install
 
 ::
 
-	pip install pythreadworker
+  pip install pythreadworker
 
 Usage example
 -------------
@@ -34,128 +34,128 @@ Basic operations and event:
 
 .. code:: python
 
-	#! python3
+  #! python3
 
-	# Always use worker.sleep. pyWorker would process event queue during 
-	# waiting.
-	from worker import Worker, listen, sleep
+  # Always use worker.sleep. pyWorker would process event queue during 
+  # waiting.
+  from worker import Worker, listen, sleep
 
-	@Worker
-	def increaser():
-		count = 1
-		
-		@listen("SET_VALUE")
-		def _(event):
-			nonlocal count
-			count = event.data
-			
-		while True:
-			print(count)
-			count += 1
-			sleep(1)
+  @Worker
+  def increaser():
+    count = 1
+    
+    @listen("SET_VALUE")
+    def _(event):
+      nonlocal count
+      count = event.data
+      
+    while True:
+      print(count)
+      count += 1
+      sleep(1)
 
-	while True:
-		command = input("input command: ")
-		
-		if command == "start":
-			increaser.start()
-			
-		elif command == "stop":
-			increaser.stop()
-			
-		elif command == "pause":
-			increaser.pause()
+  while True:
+    command = input("input command: ")
+    
+    if command == "start":
+      increaser.start()
+      
+    elif command == "stop":
+      increaser.stop()
+      
+    elif command == "pause":
+      increaser.pause()
 
-		elif command == "resume":
-			increaser.resume()
+    elif command == "resume":
+      increaser.resume()
 
-		elif command.startswith("set"):
-			increaser.fire("SET_VALUE", int(command[4:]))
+    elif command.startswith("set"):
+      increaser.fire("SET_VALUE", int(command[4:]))
 
-		elif command == "exit":
-			increaser.stop()
-			break
-			
+    elif command == "exit":
+      increaser.stop()
+      break
+      
 Async task:
 
 .. code:: python
 
-	#! python3
+  #! python3
 
-	from worker import Async, sleep
+  from worker import Async, sleep
 
-	def long_work(t):
-		sleep(t)
-		return "Finished in {} second(s)".format(t)
+  def long_work(t):
+    sleep(t)
+    return "Finished in {} second(s)".format(t)
 
-	# The async task will be executed in another thread.
-	async = Async(long_work, 5)
+  # The async task will be executed in another thread.
+  async = Async(long_work, 5)
 
-	# Do other stuff here...
+  # Do other stuff here...
 
-	# Wait the thread to complete and get the result. If the task is already
-	# finished, it returns directly with the result.
-	print(async.get())
+  # Wait the thread to complete and get the result. If the task is already
+  # finished, it returns directly with the result.
+  print(async.get())
 
 Use Channel to broadcast event:
 
 .. code:: python
 
-	#! python3
+  #! python3
 
-	from worker import Worker, Channel
+  from worker import Worker, Channel
 
-	channel = Channel()
+  channel = Channel()
 
-	def create_printer(name):
-		printer = Worker()
-		
-		@printer.listen("PRINT")
-		def _(event):
-			print(name, "recieved", event.data)
-			
-		channel.sub(printer)
-		return printer.start()
-		
-	foo = create_printer("foo")
-	bar = create_printer("bar")
+  def create_printer(name):
+    printer = Worker()
+    
+    @printer.listen("PRINT")
+    def _(event):
+      print(name, "recieved", event.data)
+      
+    channel.sub(printer)
+    return printer.start()
+    
+  foo = create_printer("foo")
+  bar = create_printer("bar")
 
-	channel.pub("PRINT", "Hello channel!")
+  channel.pub("PRINT", "Hello channel!")
 
-	foo.stop()
-	bar.stop()
+  foo.stop()
+  bar.stop()
 
 Child thread and event bubbling/broadcasting:
 
 .. code:: python
 
-	#! python3
+  #! python3
 
-	from worker import Worker, sleep
+  from worker import Worker, sleep
 
-	def create_worker(name, parent):
-		thread = Worker(parent=parent)
-		
-		@thread.listen("HELLO")
-		def _(event):
-			print(name)
-			
-		return thread.start()
-		
-	parent = create_worker("parent", None)
-	child = create_worker("child", parent)
-	grand = create_worker("grand", child)
-		
-	# broadcast/bubble is happened in main thread. It doesn't gaurantee the
-	# execution order of listeners.
-	parent.fire("HELLO", broadcast=True)
-	sleep(1)
-	grand.fire("HELLO", bubble=True)
-	sleep(1)
+  def create_worker(name, parent):
+    thread = Worker(parent=parent)
+    
+    @thread.listen("HELLO")
+    def _(event):
+      print(name)
+      
+    return thread.start()
+    
+  parent = create_worker("parent", None)
+  child = create_worker("child", parent)
+  grand = create_worker("grand", child)
+    
+  # broadcast/bubble is happened in main thread. It doesn't gaurantee the
+  # execution order of listeners.
+  parent.fire("HELLO", broadcast=True)
+  sleep(1)
+  grand.fire("HELLO", bubble=True)
+  sleep(1)
 
-	# stop a thread would also stop its children
-	parent.stop()
-	
+  # stop a thread would also stop its children
+  parent.stop()
+  
 API reference
 -------------
 http://pythreadworker.readthedocs.io/en/latest/
@@ -167,6 +167,13 @@ Notes
 
 Changelog
 ---------
+
+* 0.7.0 (Feb 26, 2017)
+
+  - Improve docs.
+  - Drop ``def target(thread)`` syntax, use ``current()`` to get current thread instead.
+  - Use pylint and sphinx.
+  - Export `more shortcuts <https://github.com/eight04/pyWorker/blob/4e8d95f64b6925e55a8f688447684343384221b7/worker/__init__.py#L16-L20>`__.
 
 * 0.6.0 (Jul 1, 2016)
 
