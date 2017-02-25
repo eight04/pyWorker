@@ -2,7 +2,7 @@
 from xcute import cute, Bump, Version, Exc
 
 cute(
-    lint = 'py -3.5 -m pylint worker cute docs/conf.py',
+    lint = 'py -3.5 -m pylint worker cute docs/conf.py setup test',
     test = ['lint', 'python test.py', 'readme_build'],
     bump_pre = 'test',
     bump = Bump('worker/__init__.py'),

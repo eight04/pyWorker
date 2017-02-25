@@ -231,7 +231,7 @@ class TestWorker(unittest.TestCase):
                 access.add(w)
             ch.sub(w)
         
-        for i in range(10):
+        for _ in range(10):
             new_worker()
             
         ch.pub("MY_EVENT")
