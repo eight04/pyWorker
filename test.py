@@ -12,36 +12,37 @@ class TestWorker(unittest.TestCase):
 		"""start/pause/resume/stop/join"""
 		a = 0
 		
-		def increaser(thread):
+		@worker.Worker
+		def increaser():
 			nonlocal a
 
-			@thread.listen("set")
+			@worker.listen("set")
 			def _(event):
 				nonlocal a
 				a = event.data
 
 			while True:
-				thread.wait(1)
+				worker.sleep(1)
 				a += 1
 				
-		thread = worker.Worker(increaser).start()
+		increaser.start()
 		
 		with self.subTest("basic"):		
 			time.sleep(5.5)
 			self.assertEqual(a, 5)
 		
 		with self.subTest("pause"):
-			thread.pause()			
+			increaser.pause()			
 			time.sleep(2)
 			self.assertEqual(a, 5)
 			
 		with self.subTest("event works even the thread is paused"):
-			thread.fire("set", 0)
+			increaser.fire("set", 0)
 			time.sleep(2)
 			self.assertEqual(a, 0)
 		
 		with self.subTest("resume"):
-			thread.resume()
+			increaser.resume()
 			time.sleep(0.5)
 			self.assertEqual(a, 1)
 		
@@ -50,11 +51,11 @@ class TestWorker(unittest.TestCase):
 			self.assertEqual(a, 5)
 
 		with self.subTest("stop"):
-			thread.stop()
+			increaser.stop()
 			time.sleep(2)
 			self.assertEqual(a, 5)
 		
-		thread.join()
+		increaser.join()
 		
 	def test_child_thread(self):
 		parent = worker.Worker()
