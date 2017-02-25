@@ -219,7 +219,7 @@ class Worker:
                 if listener.target is None or listener.target is event.target:
                     try:
                         listener.callback(event)
-                    except Exception as err:
+                    except Exception as err: # pylint: disable=broad-except
                         print("Error occurred in listener: " + self.node_name)
                         traceback.print_exc()
                         self.fire("LISTENER_ERROR", data=err, bubble=True)

@@ -1,6 +1,6 @@
 #! python3
 
-from setuptools import setup
+from setuptools import setup, find_packages
 from os import path
 
 import re
@@ -35,6 +35,6 @@ setup(
 		'Programming Language :: Python :: 3.5'
 	],
 	keywords='thread threading worker',
-	packages=["worker"]
+	packages=find_packages()
 )
 
