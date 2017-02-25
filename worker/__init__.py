@@ -22,7 +22,7 @@ SHORTCUTS = [
 __all__ = [
     "Event", "Listener", "Worker", "Async", "Channel",
     "current", "is_main", "sleep"
-]
+] + SHORTCUTS
 
 class WorkerExit(BaseException):
     """Raise this error to exit current thread. Used by
@@ -752,8 +752,6 @@ def create_shortcut(key):
 for key in SHORTCUTS:
     globals()[key] = create_shortcut(key)
     
-__all__ += SHORTCUTS
-
 def current():
     """Get current thread"""
     return WORKER_POOL.current()
