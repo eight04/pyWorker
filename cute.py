@@ -22,5 +22,6 @@ cute(
 	readme_show = 'start %temp%/ld.html',
 	readme = 'readme_build',
 	readme_post = 'readme_show',
-	version = [Version('worker/__init__.py'), 'echo {version}']
+	version = [Version('worker/__init__.py'), 'echo {version}'],
+    doc = 'sphinx-autobuild -B -z worker docs docs/build'
 )
