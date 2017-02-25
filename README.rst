@@ -23,51 +23,58 @@ Install
 
 	pip install pythreadworker
 
-Usage
------
+Usage example
+-------------
 
-Basic
+Basic operations and event:
 
-::
+.. code:: python
 
 	#! python3
 
-	from worker import Worker, sleep
+	# Always use worker.sleep. pyWorker would process event queue during 
+	# waiting.
+	from worker import Worker, listen, sleep
 
-	count = None
-
+	@Worker
 	def increaser():
-		global count
 		count = 1
+		
+		@listen("SET_VALUE")
+		def _(event):
+			nonlocal count
+			count = event.data
+			
 		while True:
 			print(count)
 			count += 1
 			sleep(1)
 
-	thread = Worker(increaser)
-
 	while True:
 		command = input("input command: ")
-
-		if command == "pause":
-			thread.pause()
-
-		if command == "resume":
-			thread.resume()
-
-		if command == "stop":
-			thread.stop()
-			
+		
 		if command == "start":
-			thread.start()
+			increaser.start()
+			
+		elif command == "stop":
+			increaser.stop()
+			
+		elif command == "pause":
+			increaser.pause()
 
-		if command == "exit":
-			thread.stop()
+		elif command == "resume":
+			increaser.resume()
+
+		elif command.startswith("set"):
+			increaser.fire("SET_VALUE", int(command[4:]))
+
+		elif command == "exit":
+			increaser.stop()
 			break
+			
+Async task:
 
-Async task
-
-::
+.. code:: python
 
 	#! python3
 
@@ -77,55 +84,44 @@ Async task
 		sleep(t)
 		return "Finished in {} second(s)".format(t)
 
+	# The async task will be executed in another thread.
 	async = Async(long_work, 5)
 
 	# Do other stuff here...
 
+	# Wait the thread to complete and get the result. If the task is already
+	# finished, it returns directly with the result.
 	print(async.get())
 
-Listen to event
+Use Channel to broadcast event:
 
-::
-
-	#! python3
-
-	from worker import Worker
-
-	def create_printer():
-		thread = Worker()
-		
-		@thread.listen("PRINT")
-		def _(event):
-			print(event.data)
-			
-		return thread.start()
-
-	thread = create_printer()
-	thread.fire("PRINT", "Hello thread!")
-	thread.stop()
-	
-Subscribe to channel
-
-::
+.. code:: python
 
 	#! python3
 
 	from worker import Worker, Channel
 
-	def create_worker():
-		thread = Worker()
-		@thread.listen("PRINT")
-		def _(event):
-			print(event.data)
-		channel.sub(thread)
-		return thread.start()
-
 	channel = Channel()
-	thread = create_worker()
-	channel.pub("PRINT", "Hello channel!")
-	thread.stop()
 
-Child thread and bubble/broadcast
+	def create_printer(name):
+		printer = Worker()
+		
+		@printer.listen("PRINT")
+		def _(event):
+			print(name, "recieved", event.data)
+			
+		channel.sub(printer)
+		return printer.start()
+		
+	foo = create_printer("foo")
+	bar = create_printer("bar")
+
+	channel.pub("PRINT", "Hello channel!")
+
+	foo.stop()
+	bar.stop()
+
+Child thread and bubble/broadcast:
 
 ::
 
@@ -135,22 +131,25 @@ Child thread and bubble/broadcast
 
 	def create_worker(name, parent):
 		thread = Worker(parent=parent)
+		
 		@thread.listen("HELLO")
 		def _(event):
 			print(name)
+			
 		return thread.start()
 		
 	parent = create_worker("parent", None)
 	child = create_worker("child", parent)
 	grand = create_worker("grand", child)
 		
-	# broadcast/bubble is happened in main thread. It doesn't gaurantee the execution order of listeners.
+	# broadcast/bubble is happened in main thread. It doesn't gaurantee the
+	# execution order of listeners.
 	parent.fire("HELLO", broadcast=True)
 	sleep(1)
 	grand.fire("HELLO", bubble=True)
 	sleep(1)
 
-	# stop a thread will cause its children to stop
+	# stop a thread would also stop its children
 	parent.stop()
 
 Notes
