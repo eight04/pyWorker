@@ -1,6 +1,10 @@
 pyThreadWorker
 ==============
 
+.. image:: https://api.codacy.com/project/badge/Grade/a95224e5ad8c4e52bd8cde3193aab496
+   :alt: Codacy Badge
+   :target: https://www.codacy.com/app/eight04/pyWorker?utm_source=github.com&utm_medium=referral&utm_content=eight04/pyWorker&utm_campaign=badger
+
 .. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=latest
 	:target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
 	:alt: Documentation Status
