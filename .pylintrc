@@ -1,0 +1,5 @@
+[MESSAGES CONTROL]
+disable=multiple-imports, too-few-public-methods, function-redefined, broad-except, trailing-whitespace, missing-docstring, redefined-outer-name
+
+[VARIABLES]
+dummy-variables-rgx=(_+[a-zA-Z0-9_]*?$)|dummy|event
