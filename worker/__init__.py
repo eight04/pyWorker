@@ -80,21 +80,25 @@ class Listener:
 
 class Worker:
     """Main Worker class"""
-    def __init__(self, worker=None, parent=None, daemon=None):
+    def __init__(self, worker=None, parent=None, daemon=None, print_traceback=True):
         """Constructor.
 
         :param worker: callable or None. This function is used to overwrite
-                       :meth:`worker`.
+            :meth:`worker`.
 
         :param parent: :class:`Worker`, False, or None. The parent thread.
 
-                       If parent is None (the default), it will use current
-                       thread as the parent.
+            If parent is None (the default), it will use current
+            thread as the parent.
 
-                       If parent is False. The thread is parent-less.
+            If parent is False. The thread is parent-less.
 
         :param daemon: bool or None. Make thread becomes a "daemon thread",
-                       see also :meth:`is_daemon`.
+            see also :meth:`is_daemon`.
+                       
+        :param print_traceback: If True, a traceback will be printed when
+            the thread crashed. Note that with workers created by
+            :class:`Async`, this flag is set to False.
         """
         self.children = set()
         self.pending = set()
@@ -129,6 +133,8 @@ class Worker:
             self.parent_node.children.add(self)
 
         self.daemon = daemon
+        
+        self.print_traceback = print_traceback
 
         # listen to builtin event
         @self.listen("STOP_THREAD", priority=-100)
@@ -427,8 +433,9 @@ class Worker:
             self.parent_fire("CHILD_THREAD_STOP")
         except BaseException as err:
             self.err = err
-            print("Thread crashed: " + self.node_name)
-            traceback.print_exc()
+            if self.print_traceback:
+                print("Thread crashed: " + self.node_name)
+                traceback.print_exc()
             self.parent_fire("CHILD_THREAD_ERROR", data=err)
         else:
             self.parent_fire("CHILD_THREAD_DONE", data=self.ret)
@@ -626,7 +633,7 @@ class Async:
         if isinstance(callback, Worker):
             self.thread = callback
         else:
-            self.thread = Worker(callback, parent=False, daemon=True)
+            self.thread = Worker(callback, parent=False, daemon=True, print_traceback=False)
         self.thread.start(*args, **kwargs)
 
     def get(self):

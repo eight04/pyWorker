@@ -172,6 +172,10 @@ Notes
 Changelog
 ---------
 
+* Next
+
+  - Add print_traceback option to Worker.
+
 * 0.7.0 (Feb 26, 2017)
 
   - Improve docs.
