@@ -177,7 +177,11 @@ Changelog
   - Add print_traceback option to Worker.
   - Ability to use ``later`` as decorator.
   - Drop __all__ in __init__.py.
-  - **function rename: worker.sync -> worker.execute**
+  - **function rename: async -> async_, sync -> await_.**
+  - **Async now extends Worker and needs start() to run.**
+  - **later() now doesn't use current thread as target by default. To use current thread as target, pass target=True.**
+  - Various function are able to used as decorator, including ``await_, async_, later``.
+  - Drop daemon Thread, use daemon Worker.
   - Refactor.
 
 * 0.7.0 (Feb 26, 2017)
