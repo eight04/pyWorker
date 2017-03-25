@@ -1,6 +1,12 @@
 #! python3
 
-"""worker module"""
+"""
+worker
+======
+
+A library helping you create threaded app. Implemented with event queue
+and parent/child pattern.
+"""
 
 import threading
 from threading import RLock, Lock, Thread
