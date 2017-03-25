@@ -346,6 +346,24 @@ class TestWorker(unittest.TestCase):
             sleep(2)
         
         self.assertTrue(a)
+        
+    def test_create_worker(self):
+        from worker import create_worker, sleep
+        
+        a = False
+        
+        @create_worker
+        def thread():
+            nonlocal a
+            sleep(1)
+            a = True
+            
+        sleep(0.5)
+        self.assertFalse(a)
+        sleep(1)
+        self.assertTrue(a)
+        self.assertFalse(thread.is_running())
+        thread.join()
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main
