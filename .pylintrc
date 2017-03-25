@@ -15,6 +15,9 @@ disable=
 	# https://github.com/PyCQA/pylint/issues/782
 	not-context-manager,
 	
+	# https://github.com/PyCQA/pylint/issues/259
+	no-value-for-parameter,
+	
 	anomalous-backslash-in-string,
 	global-statement,
 	missing-docstring, multiple-imports,
