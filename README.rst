@@ -191,6 +191,7 @@ Changelog
   - Various function are able to used as decorator, including ``await_, async_, later``.
   - Drop daemon Thread, use daemon Worker.
   - Add ``Worker.wait_until``.
+  - Add ``create_worker``.
   - Refactor.
 
 * 0.7.0 (Feb 26, 2017)
