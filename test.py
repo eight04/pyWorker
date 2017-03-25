@@ -214,7 +214,7 @@ class TestWorker(unittest.TestCase):
             b = Worker().start()
             wait_forever()
         a.start().stop().join()
-        self.assertEqual(b.parent_node, a)
+        self.assertEqual(b.parent, a)
         
     def test_channel(self):
         from worker import Worker, Channel
@@ -290,6 +290,20 @@ class TestWorker(unittest.TestCase):
             sleep(2)
             self.assertEqual(a, 10)
             self.assertEqual(b, current())
+            
+    def test_later_deco(self):
+        from worker import later, sleep
+        
+        a = False
+        @later(1)
+        def _():
+            nonlocal a
+            a = True
+            
+        sleep(0.5)
+        self.assertEqual(a, False)
+        sleep(1)
+        self.assertEqual(a, True)
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main

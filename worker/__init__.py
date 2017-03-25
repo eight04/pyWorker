@@ -9,20 +9,19 @@ The document has mention "thread" object multiple times, but it actually leads
 to :class:`Worker` instead of builtin :class:`threading.Thread`.
 """
 
-import queue, threading, traceback, time, inspect, weakref, sys
+import threading, traceback, time, weakref
+from functools import wraps
+from contextlib import suppress
+from collections import deque
+import queue
 
 __version__ = "0.7.0"
 
-SHORTCUTS = [
-    "bubble", "broadcast", "listen", "unlisten", "wait",
-    "wait_forever", "parent_fire", "children_fire", "update", "later",
-    "async", "sync", "exit"
-]
-
-__all__ = [
-    "Event", "Listener", "Worker", "Async", "Channel",
-    "current", "is_main", "sleep"
-] + SHORTCUTS
+SHORTCUTS = (
+    "listen", "unlisten", "update", "exit",
+    "wait", "wait_timeout", "wait_forever", "wait_thread", "wait_event",
+    "parent_fire", "children_fire", "bubble", "broadcast"
+)
 
 class WorkerExit(BaseException):
     """Raise this error to exit current thread. Used by
@@ -77,159 +76,19 @@ class Listener:
         self.event_name = event_name
         self.target = target
         self.priority = priority
-
-class Worker:
-    """Main Worker class"""
-    def __init__(self, worker=None, parent=None, daemon=None, print_traceback=True):
-        """Constructor.
-
-        :param worker: callable or None. This function is used to overwrite
-            :meth:`worker`.
-
-        :param parent: :class:`Worker`, False, or None. The parent thread.
-
-            If parent is None (the default), it will use current
-            thread as the parent.
-
-            If parent is False. The thread is parent-less.
-
-        :param daemon: bool or None. Make thread becomes a "daemon thread",
-            see also :meth:`is_daemon`.
-                       
-        :param print_traceback: If True, a traceback will be printed when
-            the thread crashed. Note that with workers created by
-            :class:`Async`, this flag is set to False.
-        """
-        self.children = set()
-        self.pending = set()
-
+        
+class EventEmitter:
+    def __init__(self):
         self.listeners = {}
         self.listener_pool = {}
-
-        self.thread = None
         self.event_que = None
-        self.event_cache = None
-
-        self.suspend = False
-
-        self.err = None
-        self.ret = None
-
-        self.async_handle = None
-
-        if worker:
-            self.worker = worker
-            self.node_name = str(worker)
-        else:
-            self.worker = self.wait_forever
-            self.node_name = str(self)
-
-        if parent is None and not WORKER_POOL.is_main():
-            parent = WORKER_POOL.current()
-
-        self.parent_node = parent
-
-        if self.parent_node:
-            self.parent_node.children.add(self)
-
-        self.daemon = daemon
         
-        self.print_traceback = print_traceback
-
-        # listen to builtin event
-        @self.listen("STOP_THREAD", priority=-100)
-        def _(event):
-            raise WorkerExit
-
-        @self.listen("PAUSE_THREAD", priority=-100)
-        def _(event):
-            if not self.suspend and self.thread:
-                self.suspend = True
-                self.wait_event("RESUME_THREAD", cache=True)
-                self.suspend = False
-
-        @self.listen("CHILD_THREAD_START", priority=100)
-        def _(event):
-            self.children.add(event.target)
-
-        @self.listen("CHILD_THREAD_END", priority=-100)
-        def _(event):
-            self.children.remove(event.target)
-
-        @self.listen("WAIT_THREAD_PENDING")
-        def _(event):
-            self.pending.add(event.target)
-
-        @self.listen("EVENT_REJECT")
-        def _(event):
-            err_event, err_target = event.data
-            if err_event.name == "WAIT_THREAD_PENDING":
-                self.fire("WAIT_THREAD_PENDING_DONE", target=err_target)
-
-        @self.listen("EXECUTE")
-        def _(event):
-            callback, args, kwargs = event.data
-            callback(*args, **kwargs)
-
-    def fire(self, event, *args, **kwargs):
-        """Dispatch an event.
-
-        :param event: :class:`Event` or str. If event is a str, it would be
-                      converted into an Event object by passing all the
-                      arguments to the constructor.
-        """
-        if not isinstance(event, Event):
-            event = Event(event, *args, **kwargs)
-        if not event.target:
-            event.target = current()
-        self._que_event(event)
-        self._transfer_event(event)
-        return self
-
-    def bubble(self, *args, **kwargs):
-        """Bubble event through parent. A shortcut to :meth:`parent_fire`,
-        with ``bubble=True``.
-        """
-        kwargs["bubble"] = True
-        self.parent_fire(*args, **kwargs)
-        return self
-
-    def broadcast(self, *args, **kwargs):
-        """Broadcast event through children. A shortcut to
-        :meth:`children_fire`, with ``broadcast=True``.
-        """
-        kwargs["broadcast"] = True
-        self.children_fire(*args, **kwargs)
-        return self
-
-    def _que_event(self, event):
-        """Que the event"""
-        try:
-            self.event_que.put(event)
-        except AttributeError:
-            if event.target and event.target is not self:
-                event.target.fire("EVENT_REJECT", data=(event, self))
-
-    def _transfer_event(self, event):
-        """Bubble or broadcast event"""
-        if event.bubble:
-            self.parent_fire(event)
-
-        if event.broadcast:
-            self.children_fire(event)
-
-    def _process_event(self, event):
-        """Deliver the event to listeners."""
-        if event.name in self.listeners:
-            for listener in self.listeners[event.name]:
-                if listener.target is None or listener.target is event.target:
-                    try:
-                        listener.callback(event)
-                    except Exception as err: # pylint: disable=broad-except
-                        print("Error occurred in listener: " + self.node_name)
-                        traceback.print_exc()
-                        self.fire("LISTENER_ERROR", data=err, bubble=True)
-
+    def init(self):
+        self.event_que = queue.Queue()
+        
+    def uninit(self):
+        self.event_que = None
+        
     def listen(self, event_name, *args, **kwargs):
         """This is a decorator. Listen/handle specific events. Use it like:
 
@@ -241,32 +100,6 @@ class Worker:
 
         The additional arguments would be passed into :class:`Listener`
         constructor.
-
-        Note that there are some names already taken by this module, they
-        includes:
-
-        * ``STOP_THREAD`` - let current thread to stop.
-        * ``PAUSE_THREAD`` - let current thread to pause.
-        * ``RESUME_THREAD`` - let current thread to resume.
-        * ``CHILD_THREAD_START`` - a child thread has started.
-        * ``CHILD_THREAD_STOP`` - a child thread has been stopped.
-        * ``CHILD_THREAD_DONE`` - a child thread finished.
-        * ``CHILD_THREAD_ERROR`` - a child thread failed to finish.
-        * ``CHILD_THREAD_END`` - a child thread ended.
-
-        * ``WAIT_THREAD_PENDING`` - some other thread want to wait current
-          thread to end.
-
-        * ``WAIT_THREAD_PENDING_DONE`` - the thread current thread waiting
-          has ended.
-
-        * ``EVENT_REJECT`` - failed to fire an event. Maybe the thread recieving
-          the event is not running.
-
-        * ``EXECUTE`` - let current thread execute a callback.
-
-        * ``LISTENER_ERROR`` - Uncaught error while processing listener. This
-          event bubbles up.
         """
         def listen_message(callback):
             """Decorate callback"""
@@ -294,117 +127,159 @@ class Worker:
             self.listeners[listener.event_name].remove(listener)
         del self.listener_pool[callback]
 
-    def is_running(self):
-        """Check if the thread is running"""
-        return self.thread is not None
+    def que_event(self, event):
+        """Que the event"""
+        try:
+            self.event_que.put(event)
+        except AttributeError:
+            if event.target and event.target is not self:
+                event.target.fire("EVENT_REJECT", data=(event, self))
 
-    def is_daemon(self):
-        """Check if the thread is a daemon thread.
+    def process_event(self, event):
+        """Deliver the event to listeners."""
+        for listener in self.listeners.get(event.name, ()):
+            if listener.target and listener.target is not event.target:
+                continue
+            try:
+                listener.callback(event)
+            except Exception as err: # pylint: disable=broad-except
+                self.handle_listener_error(err)
+                
+    def handle_listener_error(self, err):
+        print("Error occurred in listener:")
+        traceback.print_exc()
+        
+    def fire(self, event, *args, **kwargs):
+        """Dispatch an event.
 
-        If the thread is not a daemon, its parent will ensure this thread to
-        end (through :meth:`join`) before the end of parent itself.
-
-        If :attr:`self.daemon` flag is not None, return flag value.
-
-        Otherwise, return :meth:`parent.is_daemon`.
-
-        If there is no parent thread, return False.
+        :param event: :class:`Event` or str. If event is a str, it would be
+                      converted into an Event object by passing all the
+                      arguments to the constructor.
+                      
+        We only queue and transfer the event. The event is emitted in event
+        loop.
         """
-        if self.daemon is not None:
-            return self.daemon
-
-        parent = self.parent_node
-        if parent:
-            return parent.is_daemon()
-        return False
-
-    def wait(self, param, *args, **kwargs):
-        """A shortcut method to :meth:`wait_event`, :meth:`wait_thread`, and
-        :meth:`wait_timeout`.
-
-        The method is chosen according to the type of the first argument.
-
-        * str - :meth:`wait_event`
-        * :class:`Worker` - :meth:`wait_thread`
-        * :class:`Async` - just call :meth:`Async.get` on the object.
-        * others - :meth:`wait_timeout`
-        """
-        if isinstance(param, str):
-            return self.wait_event(param, *args, **kwargs)
-        if isinstance(param, Worker):
-            return self.wait_thread(param, *args, **kwargs)
-        if isinstance(param, Async):
-            return param.get()
-        return self.wait_timeout(param)
-
-    def wait_timeout(self, timeout):
-        """Wait for timeout (in seconds)"""
-        return self.wait_event(None, timeout=timeout)
-
-    def wait_forever(self):
-        """Create an infinite event loop."""
-        return self.wait_event(None)
-
-    def wait_thread(self, thread):
-        """Wait thread to end. Return ``(thread_error, thread_result)``
-        tuple.
-        """
-        thread.fire("WAIT_THREAD_PENDING")
-        self.wait_event("WAIT_THREAD_PENDING_DONE", target=thread)
-        return (thread.err, thread.ret)
-
-    def wait_event(self, name, timeout=None, target=None, cache=False):
-        """Wait for specific event. Return event data.
-
-        :param name:    str. The name of the event.
-        :param timeout: int, in seconds. If provided, return None when time up.
-
-        :param target:  :class:`Worker`, If provided, it must match
-                        ``event.target``.
-
-        :param cache:   Cache event after being processed. Used by
-                        ``PAUSE_THREAD``.
-        """
+        if not isinstance(event, Event):
+            event = Event(event, *args, **kwargs)
+        if not event.target:
+            event.target = current()
+        self.que_event(event)
+        return self
+        
+    def event_loop(self, timeout=None, stop_on=None):
+        """Do event loop."""
         if timeout:
             end_time = time.time() + timeout
         else:
             end_time = None
-
-        while True:
-            try:
-                event = self.event_cache.get_nowait()
-            except queue.Empty:
-                break
-            if name == event.name and (not target or target == event.target):
-                return event.data
-            if end_time and time.time() > end_time:
-                return
-
-        if end_time:
-            timeout = end_time - time.time()
-
+            
         while timeout is None or timeout > 0:
             try:
                 event = self.event_que.get(timeout=timeout)
-                self._process_event(event)
             except queue.Empty:
                 # timeup
                 return
-            if event.name == name and (not target or target == event.target):
-                return event.data
-            if cache:
-                self.event_cache.put(event)
+                
+            self.process_event(event)
+            
+            if stop_on and stop_on(event):
+                return event
+        
             if end_time:
                 timeout = end_time - time.time()
+        
+    def update(self):
+        """Process all events inside the event queue."""
+        while True:
+            try:
+                event = self.event_que.get_nowait()
+            except queue.Empty:
+                break
+            self.process_event(event)
+            
+class CachedEventEmitter(EventEmitter):
+    def __init__(self):
+        super().__init__()
+        self.use_cache = False
+        self.processed_events = None
+        
+    def init(self):
+        super().init()
+        self.processed_events = deque()
+        
+    def uninit(self):
+        super().uninit()
+        self.processed_events = None
+        
+    def process_event(self, event):
+        super().process_event(event)
+        if self.use_cache:
+            self.processed_events.append(event)
+        
+    def event_loop(self, timeout=None, stop_on=None):
+        if timeout:
+            end_time = time.time() + timeout
+        else:
+            end_time = None
+            
+        while self.processed_events and (timeout is None or timeout > 0):
+            event = self.processed_events.popleft()
+            
+            if stop_on and stop_on(event):
+                return event
+        
+            if end_time:
+                timeout = end_time - time.time()
+                
+        return super().event_loop(timeout, stop_on)
+        
+class EventTree(CachedEventEmitter):
+    """Link multiple EventEmitter with parent/children."""
+    def __init__(self):
+        """Init"""
+        super().__init__()
+        self.parent = None
+        self.children = set()
+        
+    def handle_listener_error(self, err):
+        super().handle_listener_error(err)
+        self.fire("LISTENER_ERROR", data=err, bubble=True)
+        
+    def que_event(self, event):
+        super().que_event(event)
+        self.transfer_event(event)
+        
+    def transfer_event(self, event):
+        """Bubble or broadcast event"""
+        if event.bubble:
+            self.parent_fire(event)
+
+        if event.broadcast:
+            self.children_fire(event)
+
+    def bubble(self, *args, **kwargs):
+        """Bubble event through parent. A shortcut to :meth:`parent_fire`,
+        with ``bubble=True``.
+        """
+        kwargs["bubble"] = True
+        self.parent_fire(*args, **kwargs)
+        return self
+
+    def broadcast(self, *args, **kwargs):
+        """Broadcast event through children. A shortcut to
+        :meth:`children_fire`, with ``broadcast=True``.
+        """
+        kwargs["broadcast"] = True
+        self.children_fire(*args, **kwargs)
+        return self
 
     def parent_fire(self, *args, **kwargs):
         """Dispatch event on parent. See :meth:`fire` for the
         arguments.
         """
-        parent = self.parent_node
-        if parent:
-            kwargs["target"] = self
-            self.parent_node.fire(*args, **kwargs)
+        kwargs["target"] = self
+        with suppress(AttributeError):
+            self.parent.fire(*args, **kwargs)
 
     def children_fire(self, *args, **kwargs):
         """Dispatch event on children. See :meth:`fire` for the
@@ -414,7 +289,160 @@ class Worker:
         for child in self.children.copy():
             child.fire(*args, **kwargs)
 
-    def _wrap_worker(self, *args, **kwargs):
+class Worker(EventTree):
+    """Main Worker class"""
+    def __init__(self, worker=None, parent=None, daemon=None, print_traceback=True):
+        """Constructor.
+
+        :param worker: callable or None. This function is used to overwrite
+            :meth:`worker`.
+
+        :param parent: :class:`Worker`, False, or None. The parent thread.
+
+            If parent is None (the default), it will use current
+            thread as the parent.
+
+            If parent is False. The thread is parent-less.
+
+        :param daemon: bool or None. Make thread becomes a "daemon thread",
+            see also :meth:`is_daemon`.
+                       
+        :param print_traceback: If True, a traceback will be printed when
+            the thread crashed. Note that with workers created by
+            :class:`Async`, this flag is set to False.
+        """
+        super().__init__()
+        
+        self.pending = set()
+
+        self.thread = None
+
+        self.err = None
+        self.ret = None
+
+        if worker:
+            self.worker = worker
+            self.node_name = str(worker)
+        else:
+            self.worker = self.wait_forever
+            self.node_name = str(self)
+
+        if parent is None and not WORKER_POOL.is_main():
+            parent = WORKER_POOL.current()
+
+        self.parent = parent
+
+        if self.parent:
+            self.parent.children.add(self)
+
+        self.daemon = daemon
+        self.print_traceback = print_traceback
+        self.paused = False
+        
+        self.register_default_listeners()
+
+    def register_default_listeners(self):
+        # listen to builtin event
+        @self.listen("STOP_THREAD", priority=-100)
+        def _(event):
+            raise WorkerExit
+
+        @self.listen("PAUSE_THREAD", priority=-100)
+        def _(event):
+            if self.paused or not self.thread:
+                return
+            self.paused = True
+            self.use_cache = True
+            self.wait_event("RESUME_THREAD")
+            self.use_cache = False
+            self.paused = False
+            
+            # FIXME: we can remove next line after tests
+            assert self.processed_events[-1].name == "RESUME_THREAD"
+            self.processed_events.pop()
+    
+        @self.listen("CHILD_THREAD_START", priority=100)
+        def _(event):
+            self.children.add(event.target)
+
+        @self.listen("CHILD_THREAD_END", priority=-100)
+        def _(event):
+            self.children.remove(event.target)
+
+        @self.listen("WAIT_THREAD_PENDING")
+        def _(event):
+            self.pending.add(event.target)
+
+        @self.listen("EVENT_REJECT")
+        def _(event):
+            err_event, err_target = event.data
+            if err_event.name == "WAIT_THREAD_PENDING":
+                self.fire("WAIT_THREAD_PENDING_DONE", target=err_target)
+
+        @self.listen("EXECUTE")
+        def _(event):
+            callback, args, kwargs = event.data
+            callback(*args, **kwargs)
+
+    def start(self, *args, **kwargs):
+        """Start thread. The arguments will be passed into
+        :meth:`Worker.worker`.
+        """
+        if not self.thread:
+            self.thread = threading.Thread(
+                target=self.wrap_worker,
+                daemon=self.daemon,
+                args=args,
+                kwargs=kwargs
+            )
+            self.init()
+            self.thread.start()
+        return self
+
+    def start_overlay(self, *args, **kwargs):
+        """Execute :meth:`Worker.worker`, but overlay on the current thread
+        instead of creating a new thread.
+
+        Useful if you want to do some setup and create an event loop on main
+        thread.
+        """
+        if not self.thread:
+            self.thread = threading.current_thread()
+            self.init()
+            self.wrap_worker(*args, **kwargs)
+        return self
+
+    def stop(self):
+        """Stop thread"""
+        self.fire("STOP_THREAD")
+        return self
+
+    def pause(self):
+        """Pause thread"""
+        self.fire("PAUSE_THREAD")
+        return self
+
+    def resume(self):
+        """Resume thread"""
+        self.fire("RESUME_THREAD")
+        return self
+
+    def join(self):
+        """Wait thread to stop.
+
+        :meth:`join` is a little different than :meth:`wait_thread`.
+
+        ``thread.join()`` uses native :meth:`threading.Thread.join`, it blocks
+        current thread until the thread is stopped.
+
+        ``wait_thread(thread)`` enters an event loop and waiting for an
+        ``WAIT_THREAD_PENDING_DONE`` event fired by the thread.
+        """
+        with suppress(AttributeError):
+            self.thread.join()
+        return self
+        
+    def wrap_worker(self, *args, **kwargs):
         """Real target sent to threading.Thread."""
 
         # add to pool
@@ -445,15 +473,14 @@ class Worker:
         native_thread = self.thread
 
         # mark thread as end
-        self.event_que = None
-        self.event_cache = None
+        self.uninit()
         self.thread = None
 
         # cleanup queue
         while True:
             try:
                 event = event_que.get_nowait()
-                self._process_event(event)
+                self.process_event(event)
             except queue.Empty:
                 break
             except WorkerExit:
@@ -470,128 +497,126 @@ class Worker:
             thread.fire("WAIT_THREAD_PENDING_DONE")
             self.pending.remove(thread)
 
-        # close async handle
-        if self.async_handle:
-            self.async_handle.stop()
-            self.async_handle = None
-
         # stop childrens
-        self._cleanup_children()
+        self.cleanup_children()
 
         # remove from pool
         WORKER_POOL.remove(native_thread)
 
-    def _cleanup_children(self):
+    def cleanup_children(self):
+        """Stop all children"""
         for child in self.children.copy():
             if child.is_daemon():
                 child.stop()
             else:
                 child.stop().join()
             self.children.remove(child)
+            
+    def is_running(self):
+        """Check if the thread is running"""
+        return self.thread is not None
 
-    def update(self):
-        """Process all events inside the event queue."""
-        while True:
-            try:
-                event = self.event_que.get_nowait()
-                self._process_event(event)
-            except queue.Empty:
-                break
+    def is_daemon(self):
+        """Check if the thread is a daemon thread.
 
-    def start(self, *args, **kwargs):
-        """Start thread. The arguments will be passed into
-        :meth:`Worker.worker`.
+        If the thread is not a daemon, its parent will ensure this thread to
+        end (through :meth:`join`) before the end of parent itself.
+
+        If :attr:`self.daemon` flag is not None, return flag value.
+
+        Otherwise, return :meth:`parent.is_daemon`.
+
+        If there is no parent thread, return False.
         """
-        if not self.thread:
-            self.thread = threading.Thread(
-                target=self._wrap_worker,
-                daemon=self.daemon,
-                args=args,
-                kwargs=kwargs
-            )
-            self.event_que = queue.Queue()
-            self.event_cache = queue.Queue()
-            self.thread.start()
-        return self
+        if self.daemon is not None:
+            return self.daemon
 
-    def start_overlay(self, *args, **kwargs):
-        """Execute :meth:`Worker.worker`, but overlay on the current thread
-        instead of creating a new thread.
+        with suppress(AttributeError):
+            return self.parent.is_daemon()
+        return False
 
-        Useful if you want to do some setup and create an event loop on main
-        thread.
+    def wait(self, param, *args, **kwargs):
+        """A shortcut method to :func:`wait_event`, :func:`wait_thread`, and
+        :func:`wait_timeout`.
+
+        The method is chosen according to the type of the first argument.
+
+        * str - :func:`wait_event`
+        * :class:`Worker` - :func:`wait_thread`
+        * :class:`Async` - just call :meth:`Async.get`.
+        * others - :func:`wait_timeout`
         """
-        if not self.thread:
-            self.thread = threading.current_thread()
-            self.event_que = queue.Queue()
-            self.event_cache = queue.Queue()
-            self._wrap_worker(*args, **kwargs)
-        return self
+        if isinstance(param, str):
+            return self.wait_event(param, *args, **kwargs)
+        if isinstance(param, Worker):
+            return self.wait_thread(param, *args, **kwargs)
+        if isinstance(param, Async):
+            return param.get()
+        return self.wait_timeout(param)
 
-    def stop(self):
-        """Stop thread"""
-        self.fire("STOP_THREAD")
-        return self
+    def wait_timeout(self, timeout):
+        """Wait for timeout (in seconds)"""
+        return self.wait_event(None, timeout=timeout)
 
-    def pause(self):
-        """Pause thread"""
-        self.fire("PAUSE_THREAD")
-        return self
+    def wait_forever(self):
+        """Create an infinite event loop."""
+        return self.wait_event(None)
 
-    def resume(self):
-        """Resume thread"""
-        self.fire("RESUME_THREAD")
-        return self
-
-    def join(self):
-        """Wait thread to stop.
-
-        :meth:`join` is a little different than :meth:`wait_thread`.
-
-        ``thread.join()`` uses native :meth:`threading.Thread.join`, it blocks
-        current thread until the thread is stopped.
-
-        ``wait_thread(thread)`` enters an event loop and waiting for an
-        ``WAIT_THREAD_PENDING_DONE`` event fired by the thread.
+    def wait_thread(self, thread):
+        """Wait thread to end. Return ``(thread_error, thread_result)``
+        tuple.
         """
-        real_thread = self.thread
-        if real_thread:
-            real_thread.join()
-        return self
+        thread.fire("WAIT_THREAD_PENDING")
+        self.wait_event("WAIT_THREAD_PENDING_DONE", target=thread)
+        return (thread.err, thread.ret)
 
-    @staticmethod
-    def exit():
-        """Exit thread"""
+    def wait_event(self, name, timeout=None, target=None):
+        """Wait for specific event. Return event data.
+
+        :param name:    str. The name of the event.
+        :param timeout: int, in seconds. If provided, return None when time up.
+
+        :param target:  :class:`Worker`, If provided, it must match
+                        ``event.target``.
+
+        :param cache:   Cache event after being processed. Used by
+                        ``PAUSE_THREAD``.
+        """
+        def stop_on(event):
+            return name == event.name and (not target or target == event.target)
+            
+        return self.event_loop(timeout, stop_on)
+
+    def exit(self):
+        """Exit current thread."""
         raise WorkerExit
-
-    @staticmethod
-    def async(callback, *args, **kwargs):
-        """Create Async object. See :class:`Async`."""
-        return Async(callback, *args, **kwargs)
-
-    @staticmethod
-    def sync(callback, *args, **kwargs):
-        """Create Async object but :meth:`Async.get` the result immediately.
-
-        This is useful to put blocking task into a daemon thread.
-        """
-        return Async(callback, *args, **kwargs).get()
-
+        
     def later(self, callback, timeout, *args, **kwargs):
         """Create a timer which will resolve later.
 
         :param callback: callable
-        :param timeout:  number, in seconds.
+        :param timeout: number, in seconds.
+        
+        :param target: Optional :class:Worker. The callback would be called on
+            the target thread.
 
-        The additional arguments are passed into the callback function.
+        Additional arguments are passed into the callback function.
 
-        The timer is created in a daemon thread, but the callback is sent back
-        to the current thread after the timer expired, and is handled/called
-        in a special listener.
+        A timer is created in a daemon thread. After the timer expired, an
+        "EXECUTE" event is sent to the target thread, along with callback and
+        argument data.
+        
+        This function is a decorator when callback is not provided:
+        
+        .. code-block:: python
+        
+            @later(5)
+            def _():
+                # execute after 5 seconds...
         """
         cmd = (callback, args, kwargs)
         Worker(later_worker, daemon=True).start(cmd, timeout, self)
-
+        
     @classmethod
     def partial(cls, *args, **kwargs):
         """A decorator to convert a function into a Worker object, for
@@ -613,11 +638,6 @@ class Worker:
         def wrapper(func):
             return Worker(func, *args, **kwargs)
         return wrapper
-
-def later_worker(cmd, timeout, handle):
-    """Delay worker"""
-    sleep(timeout)
-    handle.fire("EXECUTE", cmd)
 
 class Async:
     """Async class. Used to create async task."""
@@ -641,9 +661,9 @@ class Async:
         error.
         """
         handle = current()
-        handle.async_handle = self.thread
+        handle.children.add(self.thread)
         err, ret = handle.wait_thread(self.thread)
-        handle.async_handle = None
+        handle.children.remove(self.thread)
         if err:
             raise err
         return ret
@@ -653,23 +673,23 @@ class RootWorker(Worker):
     def __init__(self):
         super().__init__(parent=False)
         self.thread = threading.main_thread()
-        self.event_que = queue.Queue()
-        self.event_cache = queue.Queue()
-
-    def wait_event(self, *args, **kwargs):
-        """Suppress WorkerExit and BaseException"""
+        self.init()
+        
+    def wait_event(self, *args, **kwargs): # pylint: disable=arguments-differ
         try:
             super().wait_event(*args, **kwargs)
         except WorkerExit:
-            self._cleanup_children()
+            self.cleanup_children()
+            
         except BaseException:
             print("Uncaught BaseException in main thread wait_event")
             traceback.print_exc()
-
+            
     def exit(self):
         """Suppress exit"""
-        self._cleanup_children()
-
+        self.cleanup_children()
+        return
+            
 class Pool:
     """Worker pool"""
     def __init__(self):
@@ -753,7 +773,10 @@ class Channel:
 def create_shortcut(key):
     def shortcut(*args, **kwargs):
         return getattr(WORKER_POOL.current(), key)(*args, **kwargs)
-    shortcut.__doc__ = "Shortcut to :meth:`current().{key}`".format(key=key)
+    shortcut.__doc__ = (
+        "A shortcut function to get current thread and call"
+        ":meth:`Worker.{key}`"
+    ).format(key=key)
     return shortcut
 
 for key in SHORTCUTS:
@@ -771,5 +794,39 @@ def is_main(thread=None):
     return WORKER_POOL.is_main(thread)
 
 def sleep(timeout):
-    """Shortcut to :meth:`current().wait_timeout`"""
-    return WORKER_POOL.current().wait(float(timeout))
+    """An alias of wait_timeout."""
+    return current().wait_timeout(float(timeout))
+    
+def async(callback, *args, **kwargs):
+    """Create Async object. See :class:`Async`."""
+    return Async(callback, *args, **kwargs)
+
+def execute(callback, *args, **kwargs):
+    """Execute callback in a daemon thread and wait for it to return.
+    """
+    return Async(callback, *args, **kwargs).get()
+    
+def later(*args, **kwargs):
+    """Short cut to current().later().
+    
+    This function can be used as a decorator:
+    
+    .. code-block:: python
+    
+        @later(5)
+        def _():
+            # execute after 5 seconds
+            
+        wait_forever()
+    """
+    if args and callable(args[0]):
+        return current().later(*args, **kwargs)
+        
+    def wrapper(f):
+        return current().later(f, *args, **kwargs)
+    return wrapper
+
+def later_worker(cmd, timeout, handle):
+    """Delay worker"""
+    sleep(timeout)
+    handle.fire("EXECUTE", cmd)
