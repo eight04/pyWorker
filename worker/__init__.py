@@ -578,17 +578,20 @@ class Worker(EventTree):
 
         The method is chosen according to the type of the first argument.
 
-        * str - :func:`wait_event`
-        * :class:`Worker` - :func:`wait_thread`
-        * :class:`Async` - just call :meth:`Async.get`.
-        * others - :func:`wait_timeout`
+        * str - :meth:`wait_event`
+        * :class:`Async` - :meth:`Async.get`.
+        * :class:`Worker` - :meth:`wait_thread`
+        * callable - :meth:`wait_until`.
+        * others - :meth:`wait_timeout`
         """
         if isinstance(param, str):
             return self.wait_event(param, *args, **kwargs)
-        if isinstance(param, Worker):
-            return self.wait_thread(param, *args, **kwargs)
         if isinstance(param, Async):
             return param.get()
+        if isinstance(param, Worker):
+            return self.wait_thread(param, *args, **kwargs)
+        if callable(param):
+            return self.wait_until(param, *args, **kwargs)
         return self.wait_timeout(param)
 
     def wait_timeout(self, timeout):
@@ -623,6 +626,17 @@ class Worker(EventTree):
             return name == event.name and (not target or target == event.target)
             
         event = self.event_loop(timeout, stop_on)
+        if event:
+            return event.data
+            
+    def wait_until(self, condition, timeout=None):
+        """Wait until condition(event) returns True.
+        
+        :param callable condition: A callback function recieving an event.
+        :param number timeout: In seconds. If provided, return None when time's
+        up.
+        """
+        event = self.event_loop(timeout, stop_on=condition)
         if event:
             return event.data
 

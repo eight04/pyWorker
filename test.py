@@ -304,6 +304,22 @@ class TestWorker(unittest.TestCase):
         self.assertEqual(a, False)
         sleep(1)
         self.assertEqual(a, True)
+        
+    def test_await(self):
+        from worker import await, later
+        from time import sleep
+        a = False
+        
+        @later(1)
+        def _():
+            nonlocal a
+            a = True
+            
+        @await
+        def _():
+            time.sleep(2)
+        
+        self.assertTrue(a)
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main
