@@ -42,9 +42,9 @@ Basic operations and event:
 
   # Always use worker.sleep. pyWorker would process event queue during 
   # waiting.
-  from worker import async_, listen, sleep
+  from worker import create_worker, listen, sleep
 
-  @async_
+  @create_worker
   def increaser():
     count = 1
     
@@ -165,7 +165,7 @@ How it works
 
 The module creates a event queue for each thread, including the main thread. When the functions provided by worker (e.g. ``sleep``, ``Async.get``) are called, they actually enter the event loop, so the module can process events, communicate with other threads, or raise an exception during the call.
 
-Which also means that if you don't use the function provided by worker, the module has no chance to affect your code. It should be easy to work with other frameworks.
+Which also means that if you don't use the function provided by the module, the module has no chance to affect your existing code. It should be easy to work with other frameworks.
   
 API reference
 -------------
@@ -180,7 +180,7 @@ Notes
 Changelog
 ---------
 
-* Next
+* 0.8.0 (Mar 26, 2017)
 
   - Add print_traceback option to Worker.
   - Ability to use ``later`` as decorator.
