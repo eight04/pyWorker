@@ -116,7 +116,7 @@ class TestWorker(unittest.TestCase):
         a.stop().join()
         
     def test_async(self):
-        from worker import Async
+        from worker import async_
         
         def long_work(timeout):
             time.sleep(timeout)
@@ -124,15 +124,15 @@ class TestWorker(unittest.TestCase):
         
         with self.subTest("parent wait child"):
             t = time.time()
-            async = Async(long_work, 1)
-            self.assertEqual(async.get(), "Finished after 1 seconds")
+            pending = async_(long_work, 1)
+            self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 1, 1)
             
         with self.subTest("child wait parent"):
-            async = Async(long_work, 1)
+            pending = async_(long_work, 1)
             time.sleep(2)
             t = time.time()
-            self.assertEqual(async.get(), "Finished after 1 seconds")
+            self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 0, 1)
             
     def test_event(self):
@@ -279,7 +279,7 @@ class TestWorker(unittest.TestCase):
             b = current()
             a += value
             
-        later(add, 2, 10)
+        current().later(add, 2, 10)
         
         with self.subTest("not yet"):
             sleep(1)
@@ -290,6 +290,17 @@ class TestWorker(unittest.TestCase):
             sleep(2)
             self.assertEqual(a, 10)
             self.assertEqual(b, current())
+            
+        later(add, 2, 10)
+        
+        with self.subTest("not yet"):
+            sleep(1)
+            self.assertEqual(a, 10)
+            
+        with self.subTest("finished"):
+            sleep(2)
+            self.assertEqual(a, 20)
+            self.assertNotEqual(b, current())
             
     def test_later_deco(self):
         from worker import later, sleep
@@ -306,7 +317,7 @@ class TestWorker(unittest.TestCase):
         self.assertEqual(a, True)
         
     def test_await(self):
-        from worker import await, later
+        from worker import await_, later
         from time import sleep
         a = False
         
@@ -315,9 +326,9 @@ class TestWorker(unittest.TestCase):
             nonlocal a
             a = True
             
-        @await
+        @await_
         def _():
-            time.sleep(2)
+            sleep(2)
         
         self.assertTrue(a)
             

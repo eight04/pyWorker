@@ -52,13 +52,17 @@ will wait until all non-daemon children exit.
 import threading, traceback, time, weakref
 from contextlib import suppress
 from collections import deque
+from functools import wraps
 import queue
 
 __version__ = "0.7.0"
 
 SHORTCUTS = (
     "listen", "unlisten", "update", "exit",
-    "wait", "wait_timeout", "wait_forever", "wait_thread", "wait_event",
+    
+    "wait", "wait_timeout", "wait_forever", "wait_thread",
+    "wait_event", "wait_until",
+    
     "parent_fire", "children_fire", "bubble", "broadcast"
 )
 
@@ -116,6 +120,18 @@ class Listener:
         self.target = target
         self.priority = priority
         
+def callback_deco_meth(f):
+    """Make method which accept a callback be able to used as a decorator.
+    """
+    @wraps(f)
+    def wrapped(self, *args, **kwargs):
+        if args and callable(args[0]):
+            return f(self, *args, **kwargs)
+        def wrapped(callback):
+            return f(self, callback, *args, **kwargs)
+        return wrapped
+    return wrapped
+        
 class EventEmitter:
     def __init__(self):
         self.listeners = {}
@@ -128,8 +144,10 @@ class EventEmitter:
     def uninit(self):
         self.event_que = None
         
-    def listen(self, event_name, *args, **kwargs):
-        """This is a decorator. Listen/handle specific events. Use it like:
+    @callback_deco_meth
+    def listen(self, callback, *args, **kwargs):
+        """This method can be used as a decorator. Listen/handle specific
+        events. Use it like:
 
         .. code:: python
 
@@ -140,25 +158,18 @@ class EventEmitter:
         The additional arguments would be passed into :class:`Listener`
         constructor.
         """
-        def listen_message(callback):
-            """Decorate callback"""
-            listener = Listener(callback, event_name, *args, **kwargs)
+        listener = Listener(callback, *args, **kwargs)
 
-            if event_name not in self.listeners:
-                self.listeners[event_name] = [listener]
-            else:
-                i = 0
-                for t_listener in self.listeners[event_name]:
-                    if t_listener.priority < listener.priority:
-                        break
-                    i += 1
-                self.listeners[event_name].insert(i, listener)
+        listeners = self.listeners.setdefault(listener.event_name, [])
+        i = 0
+        for t_listener in listeners:
+            if t_listener.priority < listener.priority:
+                break
+            i += 1
+        listeners.insert(i, listener)
 
-            if callback not in self.listener_pool:
-                self.listener_pool[callback] = []
-            self.listener_pool[callback].append(listener)
-            return callback
-        return listen_message
+        self.listener_pool.setdefault(callback, []).append(listener)
+        return callback
 
     def unlisten(self, callback):
         """Unlisten a callback"""
@@ -645,30 +656,8 @@ class Worker(EventTree):
         raise WorkerExit
         
     def later(self, callback, timeout, *args, **kwargs):
-        """Create a timer which will resolve later.
-
-        :param callback: callable
-        :param timeout: number, in seconds.
-        
-        :param target: Optional :class:Worker. The callback would be called on
-            the target thread.
-
-        Additional arguments are passed into the callback function.
-
-        A timer is created in a daemon thread. After the timer expired, an
-        "EXECUTE" event is sent to the target thread, along with callback and
-        argument data.
-        
-        This function is a decorator when callback is not provided:
-        
-        .. code-block:: python
-        
-            @later(5)
-            def _():
-                # execute after 5 seconds...
-        """
-        cmd = (callback, args, kwargs)
-        Worker(later_worker, daemon=True).start(cmd, timeout, self)
+        """Run :func:`later` task with ``target=self``."""
+        return Later(callback, timeout, target=self).start(*args, **kwargs)
         
     @classmethod
     def partial(cls, *args, **kwargs):
@@ -692,9 +681,9 @@ class Worker(EventTree):
             return Worker(func, *args, **kwargs)
         return wrapper
 
-class Async:
+class Async(Worker):
     """Async class. Used to create async task."""
-    def __init__(self, callback, *args, **kwargs):
+    def __init__(self, callback):
         """Constructor.
 
         :param callback: :class:`Worker` or callable. If callback is not a
@@ -703,24 +692,54 @@ class Async:
 
         The additional arguments are passed into :meth:`Worker.start`.
         """
-        if isinstance(callback, Worker):
-            self.thread = callback
-        else:
-            self.thread = Worker(callback, parent=False, daemon=True, print_traceback=False)
-        self.thread.start(*args, **kwargs)
+        super().__init__(callback, parent=False, daemon=True, print_traceback=False)
 
     def get(self):
         """Wait thread to end and return the result. Raise if getting an
         error.
         """
         handle = current()
-        handle.children.add(self.thread)
-        err, ret = handle.wait_thread(self.thread)
-        handle.children.remove(self.thread)
+        handle.children.add(self)
+        err, ret = handle.wait_thread(self)
+        handle.children.remove(self)
         if err:
             raise err
         return ret
-
+        
+class Later(Worker):
+    """Later class. Used to do delay task."""
+    def __init__(self, callback, timeout, target=None):
+        """Construct Later.
+        
+        :param callback: A callback function to execute after timeout.
+        
+        :param number timeout: In seconds, the delay before executing the
+            callback.
+        
+        :param Worker target: If set, the callback would be sent to the target 
+            thread and let target thread execute the callback. 
+            
+            If ``target=True``, use current thread as target.
+            
+            If ``target=None`` (default), just call the callback in the Later
+            thread.
+        """
+        if target is True:
+            target = current()
+            
+        def worker(*args, **kwargs):
+            self.wait_timeout(timeout)
+            if target:
+                target.fire("EXECUTE", (callback, args, kwargs))
+            else:
+                callback(*args, **kwargs)
+                
+        super().__init__(worker, daemon=True)
+        
+    def cancel(self):
+        """Cancel the later task."""
+        self.stop()
+        
 class RootWorker(Worker):
     """Root worker. Represent main thread"""
     def __init__(self):
@@ -850,36 +869,64 @@ def sleep(timeout):
     """An alias of wait_timeout."""
     return current().wait_timeout(float(timeout))
     
-def async(callback, *args, **kwargs):
-    """Create Async object. See :class:`Async`."""
-    return Async(callback, *args, **kwargs)
-
-def await(callback, *args, **kwargs):
-    """Execute callback in a daemon thread and wait for it to return.
+def callback_deco(f):
+    """Make function which accept a callback be able to used as a decorator.
+    
+    .. code-block:: python
+    
+        @callback_deco
+        def f(callback, *args, **kwargs):
+            pass
+            
+        # same as f(callback)
+        @f
+        def callback():
+            pass
+            
+        # same as f(callback, *args, **kwargs)
+        @f(*args, **kwargs)
+        def callback():
+            pass
     """
-    return Async(callback, *args, **kwargs).get()
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if args and callable(args[0]):
+            return f(*args, **kwargs)
+		# @wraps(callback)
+        def wrapped(callback):
+            return f(callback, *args, **kwargs)
+        return wrapped
+    return wrapped
     
-def later(*args, **kwargs):
-    """Short cut to current().later().
+@callback_deco
+def async_(callback, *args, **kwargs):
+    """Create and start an Async task.
     
-    This function can be used as a decorator:
+    :param callback: The task which will be sent to a new thread.
+    
+    Additional arguments are sent to callback.
+    """
+    return Async(callback).start(*args, **kwargs)
+
+@callback_deco
+def await_(callback, *args, **kwargs):
+    """Execute callback in a thread and wait for it to return.
+    
+    It is just a shortcut to async_(...).get(). This is useful to put blocking
+    task into thread and start an event loop.
+    """
+    return async_(callback, *args, **kwargs).get()
+    
+@callback_deco
+def later(callback, timeout, *args, target=None, **kwargs):
+    """Delay callback call up to timeout seconds.
+    
+    When callback is not provided, this function can be used as a decorator:
     
     .. code-block:: python
     
         @later(5)
         def _():
-            # execute after 5 seconds
-            
-        wait_forever()
+            # execute after 5 seconds..
     """
-    if args and callable(args[0]):
-        return current().later(*args, **kwargs)
-        
-    def wrapper(f):
-        return current().later(f, *args, **kwargs)
-    return wrapper
-
-def later_worker(cmd, timeout, handle):
-    """Delay worker"""
-    sleep(timeout)
-    handle.fire("EXECUTE", cmd)
+    return Later(callback, timeout, target=target).start(*args, **kwargs)

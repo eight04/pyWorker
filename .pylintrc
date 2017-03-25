@@ -37,6 +37,7 @@ attr-rgx=(([a-z][a-z0-9_]{1,30})|(_[a-z0-9_]*)|([A-Z_][A-Z0-9_]*))$
 const-rgx=^(([A-Z_][A-Z0-9_]*)|(__.*__)|[a-z_][a-z0-9_]*)$
 method-rgx=^([a-z_]+|test_[a-zA-Z_]+)$
 variable-rgx=(([a-z][a-z0-9_]{,30})|(_[a-z0-9_]*))$
+function-rgx=^[a-z][a-z0-9_]{,30}$
 
 [FORMAT]
 no-space-check=trailing-comma,empty-line
@@ -55,4 +56,6 @@ min-public-methods=0
 max-parents=14
 
 [TYPECHECK]
-#ignored-modules=worker, comiccrawler.mods.*
+ignored-modules=worker
+# generated-members=later
+# contextmanager-decorators=callback_deco, callback_deco_meth, later
