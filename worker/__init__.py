@@ -37,6 +37,16 @@ There are some event names already taken by this module, they includes:
 
 * ``LISTENER_ERROR`` - Uncaught error while processing listener. This
   event bubbles up.
+  
+Note for daemon threads
+-----------------------
+
+A daemon thread is a thread which won't stop process to exit. This is
+considered dangerous and worker module tries to avoid it.
+
+However, there is a ``daemon`` flag for :class:`Worker`. A demon worker won't
+stop its parent to exit, which means that when a worker is going to exit, it
+will wait until all non-daemon children exit.
 """
 
 import threading, traceback, time, weakref
@@ -418,7 +428,7 @@ class Worker(EventTree):
         if not self.thread:
             self.thread = threading.Thread(
                 target=self.wrap_worker,
-                daemon=self.daemon,
+                # daemon=self.daemon,
                 args=args,
                 kwargs=kwargs
             )
@@ -830,7 +840,7 @@ def async(callback, *args, **kwargs):
     """Create Async object. See :class:`Async`."""
     return Async(callback, *args, **kwargs)
 
-def execute(callback, *args, **kwargs):
+def await(callback, *args, **kwargs):
     """Execute callback in a daemon thread and wait for it to return.
     """
     return Async(callback, *args, **kwargs).get()
