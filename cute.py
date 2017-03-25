@@ -1,6 +1,6 @@
 #! python3
 
-from xcute import cute, Bump, Version, Exc
+from xcute import cute, Exc
 
 cute(
     pkg_name = 'worker',
@@ -20,7 +20,9 @@ cute(
     ],
     install = 'pip install -e .',
     install_err = 'elevate -c -w pip install -e .',
-    readme_build = 'mkdir build & python setup.py --long-description > build/ld && rst2html --no-raw --exit-status=1 --verbose build/ld build/ld.html',
+    readme_build = 
+        'mkdir build & python setup.py --long-description > build/ld && '
+        'rst2html --no-raw --exit-status=1 --verbose build/ld build/ld.html',
     readme_build_err = ['readme_show', Exc()],
     readme_show = 'start %temp%/ld.html',
     readme = 'readme_build',
