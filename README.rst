@@ -42,9 +42,9 @@ Basic operations and event:
 
   # Always use worker.sleep. pyWorker would process event queue during 
   # waiting.
-  from worker import Worker, listen, sleep
+  from worker import async_, listen, sleep
 
-  @Worker
+  @async_
   def increaser():
     count = 1
     
@@ -86,20 +86,20 @@ Async task:
 
   #! python3
 
-  from worker import Async, sleep
+  from worker import aynsc_, sleep
 
   def long_work(t):
     sleep(t)
     return "Finished in {} second(s)".format(t)
 
   # The async task will be executed in another thread.
-  async = Async(long_work, 5)
+  pending = async_(long_work, 5)
 
   # Do other stuff here...
 
   # Wait the thread to complete and get the result. If the task is already
   # finished, it returns directly with the result.
-  print(async.get())
+  print(pending.get())
 
 Use Channel to broadcast event:
 
@@ -160,8 +160,16 @@ Child thread and event bubbling/broadcasting:
   # stop a thread would also stop its children
   parent.stop()
   
+How it works
+------------
+
+The module creates a event queue for each thread, including the main thread. When the functions provided by worker (e.g. ``sleep``, ``Async.get``) are called, they actually enter the event loop, so the module can process events, communicate with other threads, or raise an exception during the call.
+
+Which also means that if you don't use the function provided by worker, the module has no chance to affect your code. It should be easy to work with other frameworks.
+  
 API reference
 -------------
+
 http://pythreadworker.readthedocs.io/en/latest/
 
 Notes
@@ -182,6 +190,7 @@ Changelog
   - **later() now doesn't use current thread as target by default. To use current thread as target, pass target=True.**
   - Various function are able to used as decorator, including ``await_, async_, later``.
   - Drop daemon Thread, use daemon Worker.
+  - Add ``Worker.wait_until``.
   - Refactor.
 
 * 0.7.0 (Feb 26, 2017)
