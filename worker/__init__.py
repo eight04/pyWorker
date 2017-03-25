@@ -26,14 +26,9 @@ class WorkerExit(BaseException):
 
 class Event:
     """Event data class."""
-    def __init__(
-            self, name, data=None, *,
-            bubble=False, broadcast=False, target=None
-        ):
-        """Constructor.
-
-        """
-
+    def __init__(self, name, data=None, *, bubble=False, broadcast=False,
+            target=None):
+        """Constructor."""
         self.name = name
         self.data = data
         self.target = target
@@ -44,19 +39,6 @@ class Event:
 class Listener:
     """Listener data class."""
     def __init__(self, callback, event_name, *, target=None, priority=0):
-        """Constructor.
-
-        :param callable callback: The callback function, which would recieve
-            an :class:`Event` object.
-
-        :param str event_name: Match :attr:`Event.name`.
-
-        :param Worker target: Optional target. If target is specified, the
-            listener would only match those event having the same target.
-
-        :param int priority: When processing events, the listeners would
-            be executed in priority order, highest first.
-        """
         self.callback = callback
         self.event_name = event_name
         self.target = target
@@ -92,9 +74,6 @@ class EventEmitter:
         
     @callback_deco_meth
     def listen(self, callback, *args, **kwargs):
-        """
-
-        """
         listener = Listener(callback, *args, **kwargs)
 
         listeners = self.listeners.setdefault(listener.event_name, [])
@@ -216,9 +195,6 @@ class CachedEventEmitter(EventEmitter):
         
 class EventTree(CachedEventEmitter):
     """Link multiple EventEmitter with parent/children to create a EventTree.
-    
-    This class adds some common methods to easily dispatch event to
-    parent/children.
     """
     def __init__(self):
         super().__init__()
@@ -252,17 +228,11 @@ class EventTree(CachedEventEmitter):
         return self
 
     def parent_fire(self, *args, **kwargs):
-        """Dispatch event on parent. See :meth:`EventEmitter.fire` for the
-        arguments.
-        """
         kwargs["target"] = self
         with suppress(AttributeError):
             self.parent.fire(*args, **kwargs)
 
     def children_fire(self, *args, **kwargs):
-        """Dispatch event on children. See :meth:`EventEmitter.fire` for the
-        arguments.
-        """
         kwargs["target"] = self
         for child in self.children.copy():
             child.fire(*args, **kwargs)
@@ -359,7 +329,7 @@ class Worker(EventTree):
         return self
 
     def start_overlay(self, *args, **kwargs):
-        """Execute :attr:`Worker.worker`, but overlay on the current thread
+        """Execute the worker, but overlay on the current thread
         instead of creating a new thread.
 
         Useful if you want to do some setup and create an event loop on the 
@@ -523,17 +493,10 @@ class Worker(EventTree):
 class Async(Worker):
     """Async class. Used to create async task."""
     def __init__(self, task):
-        """Constructor.
-
-        :param Callable task: The worker target. This class would initiate a
-            parent-less, daemon thread without printing traceback.
-        """
+        """Constructor."""
         super().__init__(task, parent=False, daemon=True, print_traceback=False)
 
     def get(self):
-        """Wait the task to complete and return the result. Raise if
-        getting an error.
-        """
         handle = current()
         handle.children.add(self)
         err, ret = handle.wait_thread(self)
@@ -632,27 +595,19 @@ WORKER_POOL = Pool()
 WORKER_POOL.add(RootWorker())
 
 class Channel:
-    """Channel class. Used to broadcase events to multiple threads.
-
-    Events published to the channel are broadcasted to all subscriber
-    threads.
-    """
+    """Channel class."""
     def __init__(self):
         """Constructor."""
         self.pool = weakref.WeakSet()
         self.lock = Lock()
 
     def sub(self, thread=None):
-        """
-        """
         if thread is None:
             thread = WORKER_POOL.current()
         with self.lock:
             self.pool.add(thread)
 
     def unsub(self, thread=None):
-        """
-        """
         if thread is None:
             thread = WORKER_POOL.current()
         with self.lock:
@@ -671,10 +626,6 @@ def current():
     return WORKER_POOL.current()
 
 def is_main(thread=None):
-    """Check if the thread is the main thread.
-
-    :param Worker thread: Use current thread if not set.
-    """
     return WORKER_POOL.is_main(thread)
 
 def sleep(timeout):
@@ -682,24 +633,6 @@ def sleep(timeout):
     return current().wait_timeout(float(timeout))
     
 def callback_deco(f):
-    """Make function which accept a callback be able to used as a decorator.
-    
-    .. code-block:: python
-    
-        @callback_deco
-        def f(callback, *args, **kwargs):
-            pass
-            
-        # same as f(callback)
-        @f
-        def callback():
-            pass
-            
-        # same as f(callback, *args, **kwargs)
-        @f(*args, **kwargs)
-        def callback():
-            pass
-    """
     @wraps(f)
     def wrapped(*args, **kwargs):
         if args and callable(args[0]):
@@ -715,8 +648,6 @@ def async_(callback, *args, **kwargs):
 
 @callback_deco
 def await_(callback, *args, **kwargs):
-    """
-    """
     return async_(callback, *args, **kwargs).get()
     
 @callback_deco
