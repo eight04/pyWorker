@@ -8,7 +8,7 @@ cute(
     test = ['lint', 'python test.py', 'readme_build'],
     bump_pre = 'test',
     bump_post = ['dist', 'release', 'publish', 'install'],
-    dist = ['rm -r build dist', 'python setup.py sdist bdist_wheel'],
+    dist = ['rm -r build dist & python setup.py sdist bdist_wheel'],
     release = [
         'git add .',
         'git commit -m "Release v{version}"',
