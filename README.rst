@@ -175,6 +175,10 @@ Changelog
 * Next
 
   - Add print_traceback option to Worker.
+  - Ability to use ``later`` as decorator.
+  - Drop __all__ in __init__.py.
+  - **function rename: worker.sync -> worker.execute**
+  - Refactor.
 
 * 0.7.0 (Feb 26, 2017)
 

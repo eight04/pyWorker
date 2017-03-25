@@ -1,16 +1,45 @@
 #! python3
 
-"""worker module.
+"""
+worker
+======
 
 A small library helping you create threaded app. Implemented with event queue
 and parent/child pattern.
 
-The document has mention "thread" object multiple times, but it actually leads
+The document would mention "thread" object multiple times, but it actually leads
 to :class:`Worker` instead of builtin :class:`threading.Thread`.
+
+Note for events
+---------------
+
+There are some event names already taken by this module, they includes:
+
+* ``STOP_THREAD`` - let current thread to stop.
+* ``PAUSE_THREAD`` - let current thread to pause.
+* ``RESUME_THREAD`` - let current thread to resume.
+* ``CHILD_THREAD_START`` - a child thread has started.
+* ``CHILD_THREAD_STOP`` - a child thread has been stopped.
+* ``CHILD_THREAD_DONE`` - a child thread finished.
+* ``CHILD_THREAD_ERROR`` - a child thread failed to finish.
+* ``CHILD_THREAD_END`` - a child thread ended.
+
+* ``WAIT_THREAD_PENDING`` - some other thread want to wait current
+  thread to end.
+
+* ``WAIT_THREAD_PENDING_DONE`` - the thread current thread waiting
+  has ended.
+
+* ``EVENT_REJECT`` - failed to fire an event. Maybe the thread recieving
+  the event is not running.
+
+* ``EXECUTE`` - let current thread execute a callback.
+
+* ``LISTENER_ERROR`` - Uncaught error while processing listener. This
+  event bubbles up.
 """
 
 import threading, traceback, time, weakref
-from functools import wraps
 from contextlib import suppress
 from collections import deque
 import queue
@@ -357,8 +386,6 @@ class Worker(EventTree):
             self.use_cache = False
             self.paused = False
             
-            # FIXME: we can remove next line after tests
-            assert self.processed_events[-1].name == "RESUME_THREAD"
             self.processed_events.pop()
     
         @self.listen("CHILD_THREAD_START", priority=100)
@@ -585,7 +612,9 @@ class Worker(EventTree):
         def stop_on(event):
             return name == event.name and (not target or target == event.target)
             
-        return self.event_loop(timeout, stop_on)
+        event = self.event_loop(timeout, stop_on)
+        if event:
+            return event.data
 
     def exit(self):
         """Exit current thread."""
