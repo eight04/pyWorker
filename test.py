@@ -9,10 +9,10 @@ class TestWorker(unittest.TestCase):
     
     def test_basic_operations(self):
         """start/pause/resume/stop/join"""
-        from worker import Worker, listen, sleep
+        from worker import async_, listen, sleep
         a = 0
         
-        @Worker
+        @async_
         def increaser():
             nonlocal a
 
@@ -59,6 +59,7 @@ class TestWorker(unittest.TestCase):
         
     def test_child_thread(self):
         from worker import Worker
+        
         parent = Worker()
         child = Worker(parent=parent)
         
@@ -315,6 +316,20 @@ class TestWorker(unittest.TestCase):
         self.assertEqual(a, False)
         sleep(1)
         self.assertEqual(a, True)
+        
+    def test_later_cancel(self):
+        from worker import later, sleep
+        
+        a = False
+        @later(1)
+        def task():
+            nonlocal a
+            a = True
+            
+        sleep(0.5)
+        task.cancel()
+        sleep(1)
+        self.assertFalse(a)
         
     def test_await(self):
         from worker import await_, later
