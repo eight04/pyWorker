@@ -461,7 +461,7 @@ class Worker(EventTree):
         return self.wait_timeout(param)
 
     def wait_timeout(self, timeout):
-        """"""
+        """Wait for timeout"""
         return self.wait_event(None, timeout=timeout)
 
     def wait_forever(self):
@@ -662,8 +662,11 @@ def later(callback, timeout, *args, target=None, **kwargs):
     return Later(callback, timeout, target=target).start(*args, **kwargs)
 
 @callback_deco
-def create_worker(callback, *args, parent=None, daemon=None, print_traceback=True, **kwargs):
-    return Worker(callback, parent=parent, daemon=daemon, print_traceback=print_traceback).start(*args, **kwargs)
+def create_worker(callback, *args, parent=None, daemon=None,
+        print_traceback=True, **kwargs):
+    """Create and start a worker."""
+    return Worker(callback, parent=parent, daemon=daemon, 
+            print_traceback=print_traceback).start(*args, **kwargs)
     
 # define shortcuts
 def create_shortcut(key):
