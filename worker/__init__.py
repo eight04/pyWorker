@@ -511,6 +511,35 @@ class Async(Worker):
             raise err
         return ret
         
+class Defer(Async):
+    """Defer object. Handy in cross-thread communication."""
+    def __init__(self):
+        def wait_fulfill():
+            event = self.wait_event("DEFER_FULFILL")
+            if self.status == "RESOLVED":
+                return event.data
+            raise event.data
+        super().__init__(wait_fulfill)
+        self.status = "PENDING"
+        self.status_lock = Lock()
+        self.start()
+    
+    def resolve(self, value):
+        """Resolve defer with value"""
+        with self.status_lock:
+            if self.status != "PENDING":
+                return
+            self.status = "RESOLVED"
+            self.fire("DEFER_FULFILL", value)
+        
+    def reject(self, err):
+        """Reject defer with error"""
+        with self.status_lock:
+            if self.status != "PENDING":
+                return
+            self.status = "REJECTED"
+            self.fire("DEFER_FULFILL", err)
+        
 class Later(Worker):
     """Later class. Used to run delayed task."""
     def __init__(self, callback, timeout, target=None):
