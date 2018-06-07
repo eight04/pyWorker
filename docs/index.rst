@@ -238,12 +238,15 @@ Classes
         wait_event, wait_until, later
             
 .. autoclass:: Async
+    :show-inheritance:
     :members: get
             
 .. autoclass:: Later
+    :show-inheritance:
     :members: cancel
     
 .. autoclass:: Defer
+    :show-inheritance:
     :members: resolve, reject, get
     
 .. autoclass:: Channel

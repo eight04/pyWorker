@@ -658,7 +658,44 @@ class Async(Worker):
         return ret
         
 class Defer(Async):
-    """Defer object. Handy in cross-thread communication."""
+    """Defer object. Handy in cross-thread communication. For example, update
+    tkinter GUI in the main thread::
+    
+        from tkinter import *
+        from worker import current, update, create_worker, Defer, is_main
+
+        main_thread = current()
+        root = Tk()
+
+        def hook():
+            root.after(100, hook)
+            update()
+
+        @create_worker
+        def worker():
+            i = 0
+            def update_some_gui(on_finished=None):
+                print("gui", is_main())
+                def remove_button():
+                    button.destroy()
+                    on_finished("OK")
+                button = Button(
+                    root,
+                    text="Click me to fulfill defer {}".format(i),
+                    command=remove_button
+                )
+                button.pack()
+            while True:
+                defer = Defer()
+                print("worker", is_main())
+                main_thread.later(update_some_gui, 0, on_finished=defer.resolve)
+                defer.get()
+                i += 1
+
+        hook()
+        root.mainloop()
+        worker.stop()
+    """
     def __init__(self):
         def wait_fulfill():
             result = self.wait_event("DEFER_FULFILL")
