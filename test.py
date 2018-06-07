@@ -199,6 +199,71 @@ class TestWorker(unittest.TestCase):
         
         a.stop().join()
         
+    def test_listener(self):
+        from worker import listen, create_worker, wait_forever, Worker
+    
+        with self.subTest("once"):
+            a = 0
+            @create_worker
+            def thread():
+                @listen("COUNT", once=True)
+                def _(event):
+                    nonlocal a
+                    a += 1
+                wait_forever()
+            thread.fire("COUNT")
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 1)
+            thread.stop().join()
+            
+        with self.subTest("permanent"):
+            a = 0
+            thread = Worker().start()
+            @thread.listen("COUNT")
+            def _(event):
+                nonlocal a
+                a += 1
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 2)
+            thread.stop().join()
+            
+        with self.subTest("non-permanent"):
+            a = 0
+            thread = Worker().start()
+            @thread.listen("COUNT", permanent=False)
+            def _(event):
+                nonlocal a
+                a += 1
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 1)
+            thread.stop().join()
+        
+        with self.subTest("non-permanent with listen shortcut"):
+            a = 0
+            @create_worker
+            def thread():
+                @listen("COUNT")
+                def _(event):
+                    nonlocal a
+                    a += 1
+                wait_forever()
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 2)
+            thread.stop().join()
+            
     def test_overlay(self):
         """Use start_overlay to start worker on current thread"""
         from worker import Worker, is_main
