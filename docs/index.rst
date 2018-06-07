@@ -194,7 +194,7 @@ Besides :func:`sleep`, there are other shortcut functions that would be bound to
 the current thread when called, including:
 
 * ``listen``: *note that listeners created by shortcut function would have
-  ``persistent=False``.*
+  ``permanent=False``.*
 * ``later``
 * ``unlisten``
 * ``update``
