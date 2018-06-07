@@ -136,7 +136,7 @@ class TestWorker(unittest.TestCase):
             self.assertAlmostEqual(time.time() - t, 0, 1)
             
     def test_defer(self):
-        from worker import Defer
+        from worker import Defer, create_worker
         
         with self.subTest("resolve"):
             defer = Defer()
@@ -150,10 +150,9 @@ class TestWorker(unittest.TestCase):
                 defer.get()
                 
         with self.subTest("resolve in another thread"):
-            from worker import create_worker
             defer = Defer()
             @create_worker
-            def worker():
+            def _():
                 defer.resolve("OK")
             self.assertEqual(defer.get(), "OK")
             
@@ -164,10 +163,9 @@ class TestWorker(unittest.TestCase):
             self.assertEqual(defer.get(), "OK")
             
         with self.subTest("resolve after get"):
-            from worker import create_worker
             defer = Defer()
             @create_worker
-            def worker():
+            def _():
                 time.sleep(0.5)
                 defer.resolve("OK")
             self.assertEqual(defer.get(), "OK")
