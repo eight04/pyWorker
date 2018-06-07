@@ -130,7 +130,7 @@ class EventEmitter:
         self.que_event(event)
         return self
         
-    def event_loop(self, timeout=None, stop_on=None):
+    def event_loop(self, timeout=None, stop_on=None): # pylint: disable=inconsistent-return-statements
         """Do event loop."""
         if timeout:
             end_time = time.time() + timeout
@@ -481,13 +481,11 @@ class Worker(EventTree):
             return name == event.name and (not target or target == event.target)
             
         event = self.event_loop(timeout, stop_on)
-        if event:
-            return event.data
+        return event and event.data
             
     def wait_until(self, condition, timeout=None):
         event = self.event_loop(timeout, stop_on=condition)
-        if event:
-            return event.data
+        return event and event.data
 
     def exit(self):
         """Exit current thread."""
