@@ -513,10 +513,10 @@ class Defer(Async):
     """Defer object. Handy in cross-thread communication."""
     def __init__(self):
         def wait_fulfill():
-            event = self.wait_event("DEFER_FULFILL")
+            result = self.wait_event("DEFER_FULFILL")
             if self.status == "RESOLVED":
-                return event.data
-            raise event.data
+                return result
+            raise result
         super().__init__(wait_fulfill)
         self.status = "PENDING"
         self.status_lock = Lock()

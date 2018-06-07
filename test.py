@@ -5,8 +5,7 @@ import gc
 import threading
 import time
 
-class TestWorker(unittest.TestCase):
-    
+class TestWorker(unittest.TestCase):    
     def test_basic_operations(self):
         """start/pause/resume/stop/join"""
         from worker import async_, listen, sleep
@@ -135,6 +134,43 @@ class TestWorker(unittest.TestCase):
             t = time.time()
             self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 0, 1)
+            
+    def test_defer(self):
+        from worker import Defer
+        
+        with self.subTest("resolve"):
+            defer = Defer()
+            defer.resolve("FOO")
+            self.assertEqual(defer.get(), "FOO")
+            
+        with self.subTest("reject"):
+            defer = Defer()
+            defer.reject(TypeError("BAR"))
+            with self.assertRaisesRegex(TypeError, "BAR"):
+                defer.get()
+                
+        with self.subTest("resolve in another thread"):
+            from worker import create_worker
+            defer = Defer()
+            @create_worker
+            def worker():
+                defer.resolve("OK")
+            self.assertEqual(defer.get(), "OK")
+            
+        with self.subTest("resolve before get"):
+            defer = Defer()
+            defer.resolve("OK")
+            time.sleep(0.5)
+            self.assertEqual(defer.get(), "OK")
+            
+        with self.subTest("resolve after get"):
+            from worker import create_worker
+            defer = Defer()
+            @create_worker
+            def worker():
+                time.sleep(0.5)
+                defer.resolve("OK")
+            self.assertEqual(defer.get(), "OK")
             
     def test_event(self):
         from worker import Worker
