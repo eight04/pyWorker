@@ -379,7 +379,7 @@ class TestWorker(unittest.TestCase):
             b = current()
             a += value
             
-        current().later(add, 2, 10)
+        current().later(add, 10, timeout=2)
         
         with self.subTest("not yet"):
             sleep(1)
@@ -391,7 +391,7 @@ class TestWorker(unittest.TestCase):
             self.assertEqual(a, 10)
             self.assertEqual(b, current())
             
-        later(add, 2, 10)
+        later(add, 10, timeout=2)
         
         with self.subTest("not yet"):
             sleep(1)
@@ -400,50 +400,37 @@ class TestWorker(unittest.TestCase):
         with self.subTest("finished"):
             sleep(2)
             self.assertEqual(a, 20)
-            self.assertNotEqual(b, current())
+            self.assertEqual(b, current())
             
-    def test_later_deco(self):
-        from worker import later, sleep
-        
-        a = False
-        @later(1)
-        def _():
-            nonlocal a
-            a = True
-            
-        sleep(0.5)
-        self.assertEqual(a, False)
-        sleep(1)
-        self.assertEqual(a, True)
-        
     def test_later_cancel(self):
         from worker import later, sleep
         
         a = False
-        @later(1)
         def task():
             nonlocal a
             a = True
-            
+        pending = later(task, timeout=1)
         sleep(0.5)
-        task.cancel()
+        pending.stop()
         sleep(1)
         self.assertFalse(a)
         
     def test_await(self):
         from worker import await_, later
         from time import sleep
+        
         a = False
         
-        @later(1)
-        def _():
+        def blocking_task():
+            sleep(1)
+            
+        def task():
             nonlocal a
             a = True
             
-        @await_
-        def _():
-            sleep(2)
-        
+        later(task)
+        # ensure await_ enter the event loop
+        await_(blocking_task)
         self.assertTrue(a)
         
     def test_create_worker(self):

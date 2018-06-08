@@ -11,12 +11,12 @@ import queue
 __version__ = "0.8.0"
 
 SHORTCUTS = (
-    "listen", "unlisten", "update", "exit",
+    "listen", "unlisten", "update", "exit", "later",
     
     "wait", "wait_timeout", "wait_forever", "wait_thread",
     "wait_event", "wait_until",
     
-    "parent_fire", "children_fire", "bubble", "broadcast",
+    "parent_fire", "children_fire", "bubble", "broadcast"
 )
 
 class WorkerExit(BaseException):
@@ -624,13 +624,38 @@ class Worker(EventTree):
         """Exit current thread."""
         raise WorkerExit
     
-    def later(self, callback, timeout, *args, **kwargs):
-        """Initiate and start a :class:`Later` object. The ``target`` of the
-        later object is set to this thread.
+    def later(self, callback, *args, timeout=0, **kwargs):
+        """Schedule a task on this thread.
         
-        Use this method to schedule a task on specific thread.
+        :arg callable callback: The task that would be executed.
+        
+        :arg float timeout: In seconds.  Wait some time before executing the
+        task.
+        
+        :return: If ``timeout`` is used, this method returns a daemon
+        :class:`Worker`, that would first ``sleep(timeout)`` before executing
+        the task. Otherwise return None.
+        
+        :rtype: Worker or None
+        
+        Other arguments are sent to the callback.
+        
+        The scheduled task would be executed inside the event loop i.e. inside
+        the event listener, so you should avoid blocking in the task.
+        
+        If a :class:`Worker` is returned, you can :meth:`Worker.stop` the worker
+        to cancel the task before the task is executed.
         """
-        return Later(callback, timeout, target=self).start(*args, **kwargs)
+        if not timeout:
+            self.fire("EXECUTE", (callback, args, kwargs))
+            return None
+            
+        @create_worker(daemon=True)
+        def worker():
+            sleep(timeout)
+            self.fire("EXECUTE", (callback, args, kwargs))
+            
+        return worker
 
 class Async(Worker):
     """Async class. Create asynchronous (threaded) task."""
@@ -740,41 +765,6 @@ class Defer:
             return self.result
         raise self.result # pylint: disable=raising-bad-type
                 
-class Later(Worker):
-    """Later class. Execute scheduled task in specific thread."""
-    def __init__(self, callback, timeout, target=None):
-        """
-        :param callback: A callback function to execute after timeout.    
-        :param number timeout: In seconds, the delay before executing the
-            callback.
-        :param Worker target: If set, the callback would be sent to the target 
-            thread and let target thread execute the callback. 
-            
-            If ``target=True``, use current thread as target.
-            
-            If ``target=None`` (default), just call the callback in the Later
-            thread.
-        """
-        if target is True:
-            target = current()
-            
-        def worker(*args, **kwargs):
-            self.wait_timeout(timeout)
-            if target:
-                target.fire("EXECUTE", (callback, args, kwargs))
-            else:
-                callback(*args, **kwargs)
-                
-        super().__init__(worker, daemon=True)
-        
-    def cancel(self):
-        """Cancel the task. It is just an alias to :meth:`Worker.stop`
-        
-        Note that this method has no effect if the task is already running on
-        the other thread.
-        """
-        return self.stop()
-        
 class RootWorker(Worker):
     """Root worker. Represent main thread.
     
@@ -949,15 +939,6 @@ def create_worker(callback, *args, parent=None, daemon=None,
     return Worker(callback, parent=parent, daemon=daemon, 
             print_traceback=print_traceback).start(*args, **kwargs)
             
-@callback_deco
-def later(callback, timeout, *args, target=None, **kwargs):
-    """Create and start a :class:`Later` task.
-    
-    ``callback``, ``timeout``, and ``target`` are sent to :class:`Later`, other
-    arguments are sent to :meth:`Later.start`.
-    """
-    return Later(callback, timeout, target=target).start(*args, **kwargs)
-    
 # define shortcuts
 def create_shortcut(key):
     if key != "listen":
