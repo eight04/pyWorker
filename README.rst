@@ -188,6 +188,13 @@ Notes
 Changelog
 ---------
 
+* 0.9.0 (Jun 8, 2018)
+
+  - **Change: The signature of `later()` is changed. You should use it to schedule a task on the specific thread.**
+  - **Change: The listener registered by `listener()` shortcut would be removed once the thread is stopped.**
+  - Add: ``permanent`` and ``once`` arguments to ``Listener``.
+  - Add: ``Defer``. A util to handle cross thread communication.
+
 * 0.8.0 (Mar 26, 2017)
 
   - Add print_traceback option to Worker.
