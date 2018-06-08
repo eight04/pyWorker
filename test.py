@@ -5,8 +5,7 @@ import gc
 import threading
 import time
 
-class TestWorker(unittest.TestCase):
-    
+class TestWorker(unittest.TestCase):    
     def test_basic_operations(self):
         """start/pause/resume/stop/join"""
         from worker import async_, listen, sleep
@@ -136,6 +135,41 @@ class TestWorker(unittest.TestCase):
             self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 0, 1)
             
+    def test_defer(self):
+        from worker import Defer, create_worker
+        
+        with self.subTest("resolve"):
+            defer = Defer()
+            defer.resolve("FOO")
+            self.assertEqual(defer.get(), "FOO")
+            
+        with self.subTest("reject"):
+            defer = Defer()
+            defer.reject(TypeError("BAR"))
+            with self.assertRaisesRegex(TypeError, "BAR"):
+                defer.get()
+                
+        with self.subTest("resolve in another thread"):
+            defer = Defer()
+            @create_worker
+            def _():
+                defer.resolve("OK")
+            self.assertEqual(defer.get(), "OK")
+            
+        with self.subTest("resolve before get"):
+            defer = Defer()
+            defer.resolve("OK")
+            time.sleep(0.5)
+            self.assertEqual(defer.get(), "OK")
+            
+        with self.subTest("resolve after get"):
+            defer = Defer()
+            @create_worker
+            def _():
+                time.sleep(0.5)
+                defer.resolve("OK")
+            self.assertEqual(defer.get(), "OK")
+            
     def test_event(self):
         from worker import Worker
         
@@ -165,6 +199,71 @@ class TestWorker(unittest.TestCase):
         
         a.stop().join()
         
+    def test_listener(self):
+        from worker import listen, create_worker, wait_forever, Worker
+    
+        with self.subTest("once"):
+            a = 0
+            @create_worker
+            def thread():
+                @listen("COUNT", once=True)
+                def _(event):
+                    nonlocal a
+                    a += 1
+                wait_forever()
+            thread.fire("COUNT")
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 1)
+            thread.stop().join()
+            
+        with self.subTest("permanent"):
+            a = 0
+            thread = Worker().start()
+            @thread.listen("COUNT")
+            def _(event):
+                nonlocal a
+                a += 1
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 2)
+            thread.stop().join()
+            
+        with self.subTest("non-permanent"):
+            a = 0
+            thread = Worker().start()
+            @thread.listen("COUNT", permanent=False)
+            def _(event):
+                nonlocal a
+                a += 1
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 1)
+            thread.stop().join()
+        
+        with self.subTest("non-permanent with listen shortcut"):
+            a = 0
+            @create_worker
+            def thread():
+                @listen("COUNT")
+                def _(event):
+                    nonlocal a
+                    a += 1
+                wait_forever()
+            thread.fire("COUNT")
+            thread.stop().join()
+            thread.start()
+            thread.fire("COUNT")
+            time.sleep(0.5)
+            self.assertEqual(a, 2)
+            thread.stop().join()
+            
     def test_overlay(self):
         """Use start_overlay to start worker on current thread"""
         from worker import Worker, is_main
@@ -280,7 +379,7 @@ class TestWorker(unittest.TestCase):
             b = current()
             a += value
             
-        current().later(add, 2, 10)
+        current().later(add, 10, timeout=2)
         
         with self.subTest("not yet"):
             sleep(1)
@@ -292,7 +391,7 @@ class TestWorker(unittest.TestCase):
             self.assertEqual(a, 10)
             self.assertEqual(b, current())
             
-        later(add, 2, 10)
+        later(add, 10, timeout=2)
         
         with self.subTest("not yet"):
             sleep(1)
@@ -301,50 +400,37 @@ class TestWorker(unittest.TestCase):
         with self.subTest("finished"):
             sleep(2)
             self.assertEqual(a, 20)
-            self.assertNotEqual(b, current())
+            self.assertEqual(b, current())
             
-    def test_later_deco(self):
-        from worker import later, sleep
-        
-        a = False
-        @later(1)
-        def _():
-            nonlocal a
-            a = True
-            
-        sleep(0.5)
-        self.assertEqual(a, False)
-        sleep(1)
-        self.assertEqual(a, True)
-        
     def test_later_cancel(self):
         from worker import later, sleep
         
         a = False
-        @later(1)
         def task():
             nonlocal a
             a = True
-            
+        pending = later(task, timeout=1)
         sleep(0.5)
-        task.cancel()
+        pending.stop()
         sleep(1)
         self.assertFalse(a)
         
     def test_await(self):
         from worker import await_, later
         from time import sleep
+        
         a = False
         
-        @later(1)
-        def _():
+        def blocking_task():
+            sleep(1)
+            
+        def task():
             nonlocal a
             a = True
             
-        @await_
-        def _():
-            sleep(2)
-        
+        later(task)
+        # ensure await_ enter the event loop
+        await_(blocking_task)
         self.assertTrue(a)
         
     def test_create_worker(self):

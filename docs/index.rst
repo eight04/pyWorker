@@ -1,427 +1,238 @@
-.. automodule:: worker
+.. currentmodule:: worker
 
-    The document would mention "thread" object multiple times, but it actually leads
-    to :class:`Worker` instead of builtin :class:`threading.Thread`.
+pyThreadWorker
+==============
 
-    Note for events
-    ---------------
+A library which can help you create threaded APP. It adds event queue, parent,
+children to each thread.
 
-    Some event names are already taken by this module, including:
+The document would mention "thread" object multiple times, but it actually
+refers to :class:`Worker` instead of builtin :class:`threading.Thread`.
 
-    * ``STOP_THREAD`` - let current thread to stop.
-    * ``PAUSE_THREAD`` - let current thread to pause.
-    * ``RESUME_THREAD`` - let current thread to resume.
-    * ``CHILD_THREAD_START`` - a child thread has started.
-    * ``CHILD_THREAD_STOP`` - a child thread has been stopped.
-    * ``CHILD_THREAD_DONE`` - a child thread finished.
-    * ``CHILD_THREAD_ERROR`` - a child thread failed to finish.
-    * ``CHILD_THREAD_END`` - a child thread ended.
+Event loop
+----------
 
-    * ``WAIT_THREAD_PENDING`` - some other thread want to wait current
-      thread to end.
+This library implements event loop for each thread. Each thread has its own
+event queue. With the event loop, we can pause/resume/stop the thread by 
+sending specific events to event queue. For example:
 
-    * ``WAIT_THREAD_PENDING_DONE`` - the thread current thread waiting
-      has ended.
+.. code-block:: python
 
-    * ``EVENT_REJECT`` - failed to fire an event. Maybe the thread recieving
-      the event is not running.
+    from worker import create_worker, wait_forever
+    
+    @create_worker
+    def worker():
+        print("thread created")
+        wait_forever()
+        
+In the previous code:
 
-    * ``EXECUTE`` - let current thread execute a callback.
+1. A thread is created
+2. The thread prints "thread created"
+3. The thread enters the event loop
 
-    * ``LISTENER_ERROR`` - Uncaught error while processing listener. This
-      event bubbles up.
+The event loop does following stuff:
+
+1. Events are processed.
+2. Listeners get called. *Note: you should avoid re-enter the event loop inside
+   a listener*
+3. If there is a "STOP_THREAD" event, :class:`WorkerExit` would be raised.
+   *Keep this in mind and carefully add "breakpoints" in your application.*
+   
+Event system
+------------
+
+When you stop a thread by calling :meth:`Worker.stop`, the thread wouldn't stop
+immediately:
+
+.. code-block:: python
+
+    from worker import Worker
+    
+    thread = Worker().start()
+    thread.stop()
+    print(thread.is_running()) # true
+
+When ``stop`` is called, an "STOP_THREAD" event is put in thread's event queue,
+after the thread processing the event, the thread would exit the event loop by
+raising :class:`WorkerExit`.
+
+To wait until the thread exits:
+
+.. code-block:: python
+
+    from worker import Worker, wait_thread
+    
+    thread = Worker().start()
+    wait_thread(thread.stop())
+    print(thread.is_running()) # false
       
-    Note for daemon threads
-    -----------------------
+Daemon thread
+-------------
 
-    A daemon thread is a thread which won't stop process to exit. This is
-    considered dangerous and worker module tries to avoid it.
+A daemon thread is a thread which won't prevent process to exit. This is
+dangerous that the daemon thread would be terminated without any cleanup.
 
-    However, there is a ``daemon`` flag for :class:`Worker`. A demon worker won't
-    stop its parent to exit, which means that when a worker is going to exit, it
-    will wait until all non-daemon children exit.
+In this library, there is no "real" daemon thread. However, we *do* have a
+``daemon`` argument when creating threads, but it works in a different way:
 
-    API Reference
-    -------------
+1. When a thread is created, it has a ``parent`` attribute pointing to the
+   creator thread (the parent thread).
+   
+2. When the parent thread exits, it would broadcast a "STOP_THREAD" event to
+   its children and wait until all child threads are stopped.
+   
+3. However, if the child thread is marked as ``daemon=True``, the parent thread
+   will not wait it. Since the daemon child thread had received the
+   "STOP_THREAD" event, it would eventually stop. But the parent thread doesn't
+   know when.
 
-    Exceptions
-    ~~~~~~~~~~
+Handle WorkerExit
+-----------------
 
-    .. autoexception:: WorkerExit
+If you want to cleanup something:
 
-        Raise this error to exit current thread.
-        
-    Functions
-    ~~~~~~~~~
+.. code-block:: python
 
-    .. function:: current()
-
-        Return current thread.
-        
-        :rtype: Worker
-        
-    .. function:: is_main(thread=None)
-
-        Check if the thread is the main thread.
-        
-        :param Worker thread: Use current thread if not set.
-        :rtype: bool
-        
-    .. function:: sleep(timeout)
-
-        Use this function to replace :func:`time.sleep`, to enter an event loop.
-        
-        This function is an shortcut to ``current().wait_timeout()``.
-        
-    Following functions have an optional callback as the first argument. They are allowed to be used as a decorator::
-
-        func(callback, *args, **kwargs)
-        
-        # which could be converted to:
-        
-        @func(*args, **kwargs)
-        def callback():
-            pass
+    from worker import create_worker, wait_forever
+    
+    @create_worker
+    def server_thread():
+        server = Server() # some kinds of multiprocess server
+        server.run()
+        try:
+            wait_forever()
+        finally:
+            server.terminate() # the server would be correctly terminated when
+                               # the event loop raises WorkerExit
             
-        
-        func(callback)
-        
-        # which could be converted to
-        
-        @func
-        def callback():
-            pass
-            
-    .. function:: create_worker([callback, ]*args, parent=None, daemon=None, print_traceback=True, **kwargs)
+    # ... do something ...
+    
+    server_thread.stop()
+    
+It would look better if the cleanup is wrapped in a contextmanager:
 
-        Create and start a :class:`Worker`.
-        
-        ``callback``, ``parent``, ``daemon``, and ``print_traceback`` are sent to :class:`Worker`, other arguments are sent to :meth:`Worker.start`.
-        
-        :rtype: Worker
-        
-    .. function:: async_([callback, ]*args, **kwargs)
+.. code-block:: python
 
-        Create and start an :class:`Async` task.
-        
-        :param callback: The task sent to :class:`Async`.
-        :rtype: Async
-        
-        Other arguments are sent to :meth:`Async.start`.
-        
-    .. function:: await_([callback, ]*args, **kwargs)
+    from contextlib import contextmanager
+    from worker import create_worker, wait_forever
+    
+    @contextmanager
+    def open_server():
+        server = Server()
+        server.run()
+        try:
+            yield server
+        finally:
+            server.terminate()
+            
+    @create_worker
+    def server_thread():
+        with open_server() as server:
+            wait_forever()
 
-        Execute the callback in an async thread and wait for return.
-        
-        It is just a shortcut to ``async_(...).get()``, which is used to put
-        blocking task into a thread and enter an event loop.
-        
-    .. function:: later([callback, ]timeout, *args, target=None, **kwargs)
+    # ... do something ...
+    
+    server_thread.stop()
+    
+Exceptions
+----------
 
-        Create and start a :class:`Later` task.
-        
-        ``callback``, ``timeout``, and ``target`` are sent to :class:`Later`, and the other arguments are sent to :meth:`Later.start`.
-        
-        :rtype: Later
-        
-    Besides :func:`sleep`, there are more shortcut functions working with current thread. Include:
+.. autoexception:: WorkerExit
 
-    * listen
-    * unlisten
-    * update
-    * exit
-    * wait
-    * wait_timeout
-    * wait_forever
-    * wait_thread
-    * wait_event
-    * wait_until
-    * parent_fire
-    * children_fire
-    * bubble
-    * broadcast
+Functions
+---------
 
-    With these functions, we can write something like::
+.. autofunction:: current
 
-        from worker import listen, wait_forever, create_worker
-        
-        @create_worker
-        def printer():
-            @listen("PRINT") # the callback is registered on printer thread
-            def _(event):
-                print(event.data)
-            wait_forever() # printer's event loop
-            
-        printer.fire("PRINT", "foo")
-        printer.fire("PRINT", "bar")
-        printer.stop().join()
-        
-    Without using explicit :class:`Worker` object.
-        
-    Classes
-    ~~~~~~~
-        
-    .. class:: Worker(worker=None, parent=None, daemon=None, print_traceback=True)
+.. autofunction:: is_main
 
-        The main Worker class, wrapping :class:`threading.Thread`.
-        
-        :param Callable worker: The function to call when the thread starts. If
-            this is not provided, use :meth:`Worker.wait_forever` as the
-            default worker.
+.. autofunction:: sleep
 
-        :type parent: Worker or False
-        :param parent: The parent thread.
+Following functions have an optional callback as the first argument. They are
+allowed to be used as a decorator. Take :func:`create_worker` for example:
 
-            If parent is None (the default), it will use current
-            thread as the parent, unless current thread is the main thread.
+.. code-block:: python
 
-            If parent is False. The thread is parent-less.
+    def my_task():
+        ...
+    my_thread = create_worker(my_task, daemon=True)
+    # my_thread is running
+    
+    # v.s.
+    
+    @create_worker(daemon=True)
+    def my_thread():
+        ...
+    # my_thread is running
 
-        :param bool daemon: Make thread become a "daemon worker", see also
-            :meth:`is_daemon`.
-                       
-        :param print_traceback: If True, print error traceback when the thread
-            crashed.
-            
-        .. method:: listen([callback,] event_name, *, target=None, priority=0)
-        
-            Register a callback, listening to specific event.
-            
-            :param callable callback: The callback function, which would recieve
-                an :class:`Event` object.
+.. autofunction:: create_worker
 
-            :param str event_name: Match :attr:`Event.name`.
+.. autofunction:: async_
+        
+.. autofunction:: await_
 
-            :param Worker target: Optional target. If target is specified, the
-                listener would only match those event having the same target.
+Following functions are just shortcuts that would be bound to the current
+thread when called:
 
-            :param int priority: When processing events, the listeners would
-                be executed in priority order, highest first.
-                
-            If callback is not provided, this method becomes a decorator::
+.. autofunction:: listen
 
-                @listen("EVENT_NAME")
-                def handler(event):
-                    # handle event...
-                    
-        .. method:: unlisten(callback)
+    .. note::
+    
+        Listeners created by ``listen`` shortcut would have ``permanent=False``,
+        so that the listener wouldn't be added multiple time when the thread is
+        restarted.
         
-            Unregister the callback.
-            
-        .. method:: fire(event_name, data=None, *, bubble=False, broadcast=False, target=None)
-        
-            Dispatch an event to this emitter.
-        
-            :param str name: Event name.
-            :param data: Event data.
-            :param bool bubble: Set to true to bubble through parent thread.
-            :param bool broadcast: Set to true to broadcast through child threads.
-            
-            :param Worker target: An optional target, usually point to the emitter 
-                of the event.
-                
-            When en event is fired, it is not directly sent to listeners but put
-            into the event queue. Subclasses should decide when to process those
-            events.
-            
-        .. method:: update()
-        
-            Process all events inside the event queue.
-            
-            Use this to hook the event loop into other frameworks. For
-            example, tkinter::
-                
-                from tkinter import Tk
-                from worker import update
-                
-                root = Tk()
-                
-                def worker_update():
-                    update()
-                    root.after(100, worker_update)
-                    
-                worker_update()
-                root.mainloop()
-                
-        .. method:: bubble(event_name, data=None, *, broadcast=False, target=None)
-        
-            Bubble event through parent. A shortcut to :meth:`parent_fire`, with ``bubble=True``.
-            
-        .. method:: broadcast(event_name, data=None, *, bubble=False, target=None)
-        
-            Broadcast event through children. A shortcut to :meth:`children_fire`, with ``broadcast=True``.
-            
-        .. method:: parent_fire(event_name, data=None, *, bubble=False, broadcast=False, target=None)
-        
-            Dispatch event on parent.
-            
-        .. method:: children_fire(event_name, data=None, *, bubble=False, broadcast=False, target=None)
-        
-            Dispatch event on children.
+.. autofunction:: unlisten
+.. autofunction:: later
+.. autofunction:: update
+.. autofunction:: wait_timeout
+.. autofunction:: wait_forever
+.. autofunction:: wait_thread
+.. autofunction:: wait_event
+.. autofunction:: wait_until
 
-        Following section contains thread-related methods:
-            
-        .. method:: start(*args, **kwargs)
+With these shortcuts, we can write code without referencing to threads:
 
-            Start the thread. The arguments are passed into the ``worker`` target.
-            
-        .. method:: stop()
-            
-            Stop the thread.
-            
-        .. method:: paus()
-        
-            Pause the thread.
-            
-        .. method:: resume()
-        
-            Resume from pause.
-            
-        .. method:: join()
-        
-            Wait thread to exit.
+.. code-block:: python
 
-            :meth:`join` is a little different than :meth:`wait_thread`.
+    from worker import listen, wait_forever, create_worker
 
-            :meth:`join` uses native :meth:`threading.Thread.join`, it blocks
-            current thread until the worker is stopped.
+    @create_worker
+    def printer():
+        # this function runs in a new thread
+        @listen("PRINT") # the listener is registered on printer thread
+        def _(event):
+            print(event.data)
+        wait_forever() # printer's event loop
 
-            :meth:`wait_thread` enters an event loop and waits for an ``WAIT_THREAD_PENDING_DONE`` event. It also has a return value: ``(thread_err, thread_ret)``.
-            
-        .. method:: cleanup_children()
-            
-            Stop all children. This method is called when exiting the current
-            thread, to make sure all non-daemon children are stopped.
-            
-        .. method:: is_running()
+    printer.fire("PRINT", "foo")
+    printer.fire("PRINT", "bar")
+    printer.stop().join()
         
-            Return True if the worker is running.
-            
-        .. method:: is_daemon()
+Classes
+-------
         
-            Check whether the worker is daemon.
+.. autoclass:: Worker
+    :members: listen, unlisten, fire, update, start, stop, pause, resume, join,
+        is_running, is_daemon, wait, wait_timeout, wait_forever, wait_thread,
+        wait_event, wait_until, later
+            
+.. autoclass:: Async
+    :show-inheritance:
+    :members: get
+            
+.. autoclass:: Later
+    :show-inheritance:
+    :members: cancel
+    
+.. autoclass:: Defer
+    :members: resolve, reject, get
+    
+.. autoclass:: Channel
+    :members: sub, unsub, pub
+    
+.. autoclass:: Event
 
-            If :attr:`self.daemon` flag is not None, return flag value.
-
-            Otherwise, return :meth:`parent.is_daemon`.
-
-            If there is no parent thread, return False.
-            
-        Calling following ``wait_*`` methods would enter an event loop:
-        
-        .. method:: wait(param, *args, **kwargs)
-        
-            A shortcut method to several ``wait_*`` methods.
-
-            The method is chosen according to the type of the first argument.
-
-            * str - :meth:`wait_event`.
-            * :class:`Async` - Just do :meth:`Async.get`.
-            * :class:`Worker` - :meth:`wait_thread`.
-            * callable - :meth:`wait_until`.
-            * others - :meth:`wait_timeout`.
-            
-        .. method:: wait_timeout(timeout)
-        
-            Wait for timeout.
-
-            :arg number timeout: In seconds, the time to wait.
-            
-        .. method:: wait_forever()
-        
-            Create an infinite event loop.
-            
-        .. method:: wait_thread(thread)
-        
-            Wait thread to end.
-            
-            :arg Worker thread: The thread to wait.
-            :return: A ``(error, result)`` tuple.
-            
-        .. method:: wait_event(name, timeout=None, target=None)
-        
-            Wait for specific event.
-
-            :param str name: Event name.
-            :param number timeout: In seconds. If provided, return None when time's up.
-            :param Worker target: If provided, it must match ``event.target``.
-            :return: Event data.
-            
-        .. method:: wait_until(condition, timeout=None)
-        
-            Wait until ``condition(event)`` returns True.
-            
-            :param callable condition: A callback function, which receives an Event object and should return boolean.
-            :param number timeout: In seconds. If provided, return None when time's
-                up.
-            :return: Event data.
-            
-        .. method:: exit()
-        
-            Exit current thread.
-            
-        .. method:: later(callback, timeout, *args, **kwargs)
-        
-            Call :func:`later` with ``target=self``.
-
-    .. class:: Async(task)
-
-        Extends :class:`Worker`, to create async task.
-        
-        :param Callable task: The worker target. This class would initiate a parent-less, daemon thread without printing traceback.
-        
-        .. method:: get()
-            
-            Get the result.
-            
-    .. class:: Later(callback, timeout, target=None)
-
-        Extends :class:`Worker`, to create delayed task.
-        
-        :param callback: A callback function to execute after timeout.
-            
-        :param number timeout: In seconds, the delay before executing the
-            callback.
-        
-        :param Worker target: If set, the callback would be sent to the target 
-            thread and let target thread execute the callback. 
-            
-            If ``target=True``, use current thread as target.
-            
-            If ``target=None`` (default), just call the callback in the Later
-            thread.
-            
-        .. method:: cancel()
-        
-            Cancel the task.
-            
-    .. class:: Channel()
-
-        Channel class. Used to broadcase events to multiple threads.
-        
-        .. method:: sub(thread=None)
-
-            Subscribe to channel.
-
-            :param Worker thread: The subscriber thread. Use current thread if not
-                provided.
-                
-        .. method:: unsub(thread=None)
-        
-            Unsubscribe to channel.
-
-            :param Worker thread: The subscriber thread. Use current thread if not
-                provided.
-                
-        .. method:: pub(event_name, data=None, *, bubble=False, broadcast=False, target=None)
-        
-            Publish an event to the channel.
-            
-            Events published to the channel are broadcasted to all subscriber threads.
-            
-    .. autoclass:: Event
-        
-        Those arguments are set as attributes::
-        
-            print(event.name, event.data)
+.. autoclass:: Listener
         

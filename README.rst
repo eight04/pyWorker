@@ -1,6 +1,12 @@
 pyThreadWorker
 ==============
 
+.. image:: https://travis-ci.org/eight04/pyWorker.svg?branch=master
+    :target: https://travis-ci.org/eight04/pyWorker
+    
+.. image:: https://codecov.io/gh/eight04/pyWorker/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/eight04/pyWorker
+
 .. image:: https://api.codacy.com/project/badge/Grade/a95224e5ad8c4e52bd8cde3193aab496
    :alt: Codacy Badge
    :target: https://www.codacy.com/app/eight04/pyWorker?utm_source=github.com&utm_medium=referral&utm_content=eight04/pyWorker&utm_campaign=badger
@@ -18,11 +24,11 @@ This module was originally included in ComicCrawler_.
 Features
 --------
 
-* Pause, resume, stop and restart thread.
-* Create child thread.
-* Create async task.
+* Pause, resume, stop, and restart a thread.
+* Support child threads.
+* Easily run asynchnous task across multiple threads.
 * Communicate between threads with events.
-* Use channel to broadcast event.
+* Use channel to broadcast events.
 
 Install
 -------
@@ -51,10 +57,12 @@ Basic operations and event:
     @listen("SET_VALUE")
     def _(event):
       nonlocal count
+      # you don't need a lock to manipulate `count`
       count = event.data
       
     while True:
       print(count)
+      # because the listener and the while loop are in the same thread
       count += 1
       sleep(1)
 
@@ -101,7 +109,7 @@ Async task:
   # finished, it returns directly with the result.
   print(pending.get())
 
-Use Channel to broadcast event:
+Use Channel to broadcast events:
 
 .. code:: python
 
@@ -137,7 +145,7 @@ Child thread and event bubbling/broadcasting:
 
   from worker import Worker, sleep
 
-  def create_worker(name, parent):
+  def create_thread(name, parent):
     thread = Worker(parent=parent)
     
     @thread.listen("HELLO")
@@ -146,9 +154,9 @@ Child thread and event bubbling/broadcasting:
       
     return thread.start()
     
-  parent = create_worker("parent", None)
-  child = create_worker("child", parent)
-  grand = create_worker("grand", child)
+  parent = create_thread("parent", None)
+  child = create_thread("child", parent)
+  grand = create_thread("grand", child)
     
   # broadcast/bubble is happened in main thread. It doesn't gaurantee the
   # execution order of listeners.
@@ -157,15 +165,15 @@ Child thread and event bubbling/broadcasting:
   grand.fire("HELLO", bubble=True)
   sleep(1)
 
-  # stop a thread would also stop its children
+  # stop a parent thread would also stop its children
   parent.stop()
   
 How it works
 ------------
 
-The module creates a event queue for each thread, including the main thread. When the functions provided by worker (e.g. ``sleep``, ``Async.get``) are called, they actually enter the event loop, so the module can process events, communicate with other threads, or raise an exception during the call.
+The module creates a event queue for each thread, including the main thread. When blocking functions are called (``worker.sleep``, ``worker.wait_event``, ``worker.Async.get``, etc), they enter the event loop so the thread can process events, communicate with other threads, or raise an exception during the call.
 
-Which also means that if you don't use the function provided by the module, the module has no chance to affect your existing code. It should be easy to work with other frameworks.
+Which also means that if you don't use functions provided by pyThreadWorker, the module has no chance to affect your existing code. It should be easy to work with other frameworks.
   
 API reference
 -------------
@@ -179,6 +187,13 @@ Notes
 
 Changelog
 ---------
+
+* 0.9.0 (Jun 8, 2018)
+
+  - **Change: The signature of `later()` is changed. You should use it to schedule a task on the specific thread.**
+  - **Change: The listener registered by `listener()` shortcut would be removed once the thread is stopped.**
+  - Add: ``permanent`` and ``once`` arguments to ``Listener``.
+  - Add: ``Defer``. A util to handle cross thread communication.
 
 * 0.8.0 (Mar 26, 2017)
 
