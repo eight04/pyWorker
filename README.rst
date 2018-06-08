@@ -26,7 +26,7 @@ Features
 
 * Pause, resume, stop, and restart a thread.
 * Support child threads.
-* Easily run asynchnous task across multiple threads.
+* Easily run asynchronous task across multiple threads.
 * Communicate between threads with events.
 * Use channel to broadcast events.
 
