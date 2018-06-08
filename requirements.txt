@@ -4,4 +4,5 @@ pyxcute>=0.5.1,<0.6
 sphinx-autobuild>=0.7.1,<0.8
 pylint>=1.8.4,<2
 coverage>=4.5.1,<5
+codecov>=2.0.15,<3
 -e .

@@ -12,7 +12,7 @@ def readme():
 cute(
     pkg_name = 'worker',
     lint = 'pylint worker cute docs/conf.py setup test',
-    test = ['lint', 'coverage -m unittest', 'readme_build'],
+    test = ['lint', 'coverage run --source worker -m unittest', 'readme_build'],
     bump_pre = 'test',
     bump_post = ['dist', 'release', 'publish', 'install'],
     dist = ['rm -r build dist & python setup.py sdist bdist_wheel'],
