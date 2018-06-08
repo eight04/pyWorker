@@ -4,7 +4,7 @@ pyThreadWorker
 ==============
 
 A library which can help you create threaded APP. It adds event queue, parent,
-children to each threads.
+children to each thread.
 
 The document would mention "thread" object multiple times, but it actually
 refers to :class:`Worker` instead of builtin :class:`threading.Thread`.
@@ -107,26 +107,7 @@ If you want to cleanup something:
     
     server_thread.stop()
     
-Or, you can listen to "STOP_THREAD" event:
-
-.. code-block:: python
-
-    from worker import create_worker, wait_forever, listen
-    
-    @create_worker
-    def server_thread():
-        @listen("STOP_THREAD")
-        def _(event):
-            server.terminate()
-        server = Server()
-        server.run()
-        wait_forever()
-        
-    # ... do something ...
-    
-    server_thread.stop()
-    
-Or, use contextmanager:
+It would look better if the cleanup is wrapped in a contextmanager:
 
 .. code-block:: python
 
