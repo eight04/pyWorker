@@ -309,22 +309,22 @@ class EventTree(CachedEventEmitter):
 
 class Worker(EventTree):
     """The main Worker class."""
-    def __init__(self, worker=None, parent=None, daemon=None, print_traceback=True):
+    def __init__(self, task=None, parent=None, daemon=None, print_traceback=True):
         """
-        :param Callable worker: The function to call when the thread starts. If
+        :param Callable task: The function to call when the thread starts. If
             this is not provided, use :meth:`Worker.wait_forever` as the
             default.
         :type parent: Worker or bool
         :param parent: The parent thread.
 
-            If parent is None (the default), it will use current
-            thread as the parent, unless current thread is the main thread.
+            If parent is None (the default), it uses the current
+            thread as the parent, unless the current thread is the main thread.
 
             If parent is False. The thread is parent-less.
 
-        :param bool daemon: create daemon thread. See also :meth:`is_daemon`.
+        :param bool daemon: Create a daemon thread. See also :meth:`is_daemon`.
         :param print_traceback: If True, print error traceback when the thread
-            is crashed.
+            is crashed (``task`` raises an error).
         """
         super().__init__()
         
@@ -335,9 +335,9 @@ class Worker(EventTree):
         self.err = None
         self.ret = None
 
-        if worker:
-            self.worker = worker
-            self.node_name = str(worker)
+        if task:
+            self.worker = task
+            self.node_name = str(task)
         else:
             self.worker = self.wait_forever
             self.node_name = str(self)
@@ -630,11 +630,11 @@ class Worker(EventTree):
         :arg callable callback: The task that would be executed.
         
         :arg float timeout: In seconds.  Wait some time before executing the
-        task.
+            task.
         
         :return: If ``timeout`` is used, this method returns a daemon
-        :class:`Worker`, that would first ``sleep(timeout)`` before executing
-        the task. Otherwise return None.
+            :class:`Worker`, that would first ``sleep(timeout)`` before
+            executing the task. Otherwise return None.
         
         :rtype: Worker or None
         

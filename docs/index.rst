@@ -188,43 +188,40 @@ allowed to be used as a decorator. Take :func:`create_worker` for example:
         
 .. autofunction:: await_
 
+Following functions are just shortcuts that would be bound to the current
+thread when called:
+
+.. autofunction:: listen
+
+    .. note::
+    
+        Listeners created by ``listen`` shortcut would have ``permanent=False``,
+        so that the listener wouldn't be added multiple time when the thread is
+        restarted.
+        
+.. autofunction:: unlisten
 .. autofunction:: later
+.. autofunction:: update
+.. autofunction:: wait_timeout
+.. autofunction:: wait_forever
+.. autofunction:: wait_thread
+.. autofunction:: wait_event
+.. autofunction:: wait_until
 
-Besides :func:`sleep`, there are other shortcut functions that would be bound to
-the current thread when called, including:
-
-* ``listen``: *note that listeners created by shortcut function would have
-  ``permanent=False``.*
-* ``later``
-* ``unlisten``
-* ``update``
-* ``exit``
-* ``wait``
-* ``wait_timeout``
-* ``wait_forever``
-* ``wait_thread``
-* ``wait_event``
-* ``wait_until``
-* ``parent_fire``
-* ``children_fire``
-* ``bubble``
-* ``broadcast``
-
-With these functions, we can write our code without referencing to
-threads:
+With these shortcuts, we can write code without referencing to threads:
 
 .. code-block:: python
 
     from worker import listen, wait_forever, create_worker
-    
-    def printer_core():
-        # curr_thread = current() no need to do this
+
+    @create_worker
+    def printer():
+        # this function runs in a new thread
         @listen("PRINT") # the listener is registered on printer thread
         def _(event):
             print(event.data)
         wait_forever() # printer's event loop
-    
-    printer = create_worker(printer_core)
+
     printer.fire("PRINT", "foo")
     printer.fire("PRINT", "bar")
     printer.stop().join()
