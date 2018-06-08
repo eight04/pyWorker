@@ -657,7 +657,7 @@ class Async(Worker):
             raise err
         return ret
         
-class Defer(Async):
+class Defer:
     """Defer object. Handy in cross-thread communication. For example, update
     tkinter GUI in the main thread::
     
@@ -697,32 +697,49 @@ class Defer(Async):
         worker.stop()
     """
     def __init__(self):
-        def wait_fulfill():
-            result = self.wait_event("DEFER_FULFILL")
-            if self.status == "RESOLVED":
-                return result
-            raise result
-        super().__init__(wait_fulfill)
         self.status = "PENDING"
         self.status_lock = Lock()
-        self.start()
+        self.pending = set()
+        self.result = None
     
     def resolve(self, value):
-        """Resolve with ``value``. Make the task return."""
-        with self.status_lock:
-            if self.status != "PENDING":
-                return
-            self.status = "RESOLVED"
-            self.fire("DEFER_FULFILL", value)
+        """Resolve with ``value``"""
+        self.fulfill("RESOLVED", value)
         
     def reject(self, err):
-        """Reject with ``err``. Cause the task fail."""
+        """Reject with ``err``"""
+        self.fulfill("REJECTED", err)
+        
+    def fulfill(self, status, result):
         with self.status_lock:
             if self.status != "PENDING":
                 return
-            self.status = "REJECTED"
-            self.fire("DEFER_FULFILL", err)
+            self.status = status
+            self.result = result
+            for thread in self.pending:
+                thread.fire("DEFER_FULFILL", self)
+            
+    def get(self):
+        """Enter the event loop and wait util the defer is fulfilled.
         
+        If the defer is resolved, return the result. If the defer is rejected,
+        raise the result.
+        """
+        with self.status_lock:
+            if self.status == "PENDING":
+                self.pending.add(current())
+            else:
+                return self.get_result()
+        def is_fulfilled(event):
+            return event.name == "DEFER_FULFILL" and event.data is self
+        current().wait_until(is_fulfilled)
+        return self.get_result()
+        
+    def get_result(self):
+        if self.status == "RESOLVED":
+            return self.result
+        raise self.result # pylint: disable=raising-bad-type
+                
 class Later(Worker):
     """Later class. Execute scheduled task in specific thread."""
     def __init__(self, callback, timeout, target=None):

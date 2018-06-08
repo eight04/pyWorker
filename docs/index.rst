@@ -246,7 +246,6 @@ Classes
     :members: cancel
     
 .. autoclass:: Defer
-    :show-inheritance:
     :members: resolve, reject, get
     
 .. autoclass:: Channel
