@@ -401,7 +401,7 @@ class Worker(EventTree):
             callback(*args, **kwargs)
 
     def start(self, *args, **kwargs):
-        """Start the thread. The arguments are passed into the ``worker``.
+        """Start the thread. The arguments are passed into ``task``.
         """
         if not self.thread:
             self.thread = Thread(
@@ -713,7 +713,7 @@ class Defer:
             while True:
                 defer = Defer()
                 print("worker", is_main())
-                main_thread.later(update_some_gui, 0, on_finished=defer.resolve)
+                main_thread.later(update_some_gui, on_finished=defer.resolve)
                 defer.get()
                 i += 1
 
