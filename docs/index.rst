@@ -39,30 +39,33 @@ The event loop does following stuff:
 3. If there is a "STOP_THREAD" event, :class:`WorkerExit` would be raised.
    *Keep this in mind and carefully add "breakpoints" in your application.*
    
-Event
------
+Event system
+------------
 
-Following events are used:
+When you stop a thread by calling :meth:`Worker.stop`, the thread wouldn't stop
+immediately:
 
-* ``STOP_THREAD``: raises :class:`WorkerExit` to stop the thread.
-* ``PAUSE_THREAD``: pause the thread. When a thread is paused,
-  it will not leave the event loop after entering, but listeners still get
-  called.
-* ``RESUME_THREAD``: resume the thread.
-* ``CHILD_THREAD_START``: a child thread is started.
-* ``CHILD_THREAD_STOP``: a child thread is stopped.
-* ``CHILD_THREAD_DONE``: a child thread is finished without error.
-* ``CHILD_THREAD_ERROR``: a child thread raises an error.
-* ``CHILD_THREAD_END``: a child thread exits.
-* ``WAIT_THREAD_PENDING``: some other threads are waiting this thread. When the
-  thread is finished, it fires "WAIT_THREAD_PENDING_DONE" event on each waiter.
-* ``WAIT_THREAD_PENDING_DONE``: the pending thread is stopped.
-* ``EVENT_REJECT``: If ``a`` thread fails to :meth:`Worker.fire` an event on 
-  ``b`` thread, ``a`` thread would receive this event (probably ``b`` thread is
-  not running).
-* ``EXECUTE``: execute a function on targeted thread. This event is used
-  by :class:`Later`.
-* ``LISTENER_ERROR``: A listener throws. This event bubbles up.
+.. code-block:: python
+
+    from worker import Worker
+    
+    thread = Worker().start()
+    thread.stop()
+    print(thread.is_running()) # true
+
+When ``stop`` is called, an "STOP_THREAD" event is put in thread's event queue,
+after the thread processing the event, the thread would exit the event loop by
+raising :class:`WorkerExit`.
+
+To wait until the thread exits:
+
+.. code-block:: python
+
+    from worker import Worker, wait_thread
+    
+    thread = Worker().start()
+    wait_thread(thread.stop())
+    print(thread.is_running()) # false
       
 Daemon thread
 -------------
