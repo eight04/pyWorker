@@ -185,7 +185,7 @@ Notes
 Changelog
 ---------
 
-* next
+* 0.10.0 (Apr 19, 2022)
 
   - **Change: require python 3.10+.**
   - Change: now calling ``wait_*`` functions would initiate a root worker if there is no worker on the current thread.
