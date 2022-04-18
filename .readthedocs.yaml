@@ -5,3 +5,7 @@ python:
     - requirements: requirements-lock.txt
     - method: pip
       path: .
+
+build:
+  tools:
+    python: "3.10"
