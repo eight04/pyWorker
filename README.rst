@@ -123,7 +123,8 @@ Use Channel to broadcast events:
       print(name, "recieved", event.data)
       
     channel.sub(printer)
-    return printer.start()
+    printer.start()
+    return printer
     
   foo = create_printer("foo")
   bar = create_printer("bar")
@@ -183,6 +184,11 @@ Notes
 
 Changelog
 ---------
+
+* next
+
+  - **Change: require python 3.10+.**
+  - Change: now calling ``wait_*`` functions would initiate a root worker if there is no worker on the current thread.
 
 * 0.9.0 (Jun 8, 2018)
 
