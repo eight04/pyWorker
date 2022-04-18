@@ -1,11 +1,14 @@
 pyThreadWorker
 ==============
 
+.. image:: https://github.com/eight04/pyWorker/actions/workflows/build.yml/badge.svg
+  :target: https://github.com/eight04/pyWorker/actions/workflows/build.yml
+
 .. image:: https://codecov.io/gh/eight04/pyWorker/branch/master/graph/badge.svg
   :target: https://codecov.io/gh/eight04/pyWorker
 
-.. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=latest
-  :target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
+.. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=stable
+  :target: https://pythreadworker.readthedocs.io/en/stable/?badge=stable
   :alt: Documentation Status
 
 A threading library written in python. Help you build threaded app.
