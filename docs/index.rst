@@ -3,11 +3,19 @@
 pyThreadWorker
 ==============
 
+:Version: |version|
+:Github: https://github.com/eight04/pyWorker
+
 A library helping you create threaded App. It adds event queue, parent,
 children to each thread.
 
 The document would mention "thread" object multiple times, but it actually
 refers to :class:`Worker` instead of builtin :class:`threading.Thread`.
+
+.. toctree::
+   :maxdepth: 2
+
+   index
 
 Event loop
 ----------
@@ -221,3 +229,4 @@ Classes
 
 .. autoclass:: Listener
         
+
