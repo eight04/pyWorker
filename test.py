@@ -134,6 +134,14 @@ class TestWorker(unittest.TestCase):
             t = time.time()
             self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 0, 1)
+
+        with self.subTest("async error"):
+            @async_
+            def pending():
+                raise Exception("An error")
+
+            with self.assertRaisesRegex(Exception, "An error"):
+                pending.get()
             
     def test_defer(self):
         from worker import Defer, create_worker, current

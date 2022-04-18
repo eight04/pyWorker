@@ -5,7 +5,8 @@ from xcute import cute, LiveReload
 cute(
     pkg_name = 'worker',
     lint = 'pylint worker cute docs/conf.py setup test',
-    test = ['lint', 'coverage run --source worker -m unittest', 'readme_build'],
+    unit = "coverage run --source worker -m unittest",
+    test = ['lint', 'unit', 'coverage report', 'readme_build'],
     bump_pre = 'test',
     bump_post = ['dist', 'release', 'publish', 'install'],
     dist = ['rm -r build dist & python setup.py sdist bdist_wheel'],
@@ -27,5 +28,7 @@ cute(
         ],
     readme_pre = "readme_build",
     readme = LiveReload("README.rst", "readme_build", "build/readme"),
-    doc = 'sphinx-autobuild -B -z worker docs docs/build'
+    doc = 'sphinx-autobuild -B -z worker docs docs/build',
+    coverage_pre = ["unit", "coverage html"],
+    coverage = LiveReload(["worker", "test.py"], "coverage_pre", "htmlcov")
     )
