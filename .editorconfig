@@ -2,6 +2,6 @@
 indent_style = space
 indent_size = 4
 
-[*.{rst,yml}]
+[*.{rst,yml,yaml}]
 indent_size = 2
 
