@@ -136,7 +136,7 @@ class TestWorker(unittest.TestCase):
             self.assertAlmostEqual(time.time() - t, 0, 1)
             
     def test_defer(self):
-        from worker import Defer, create_worker
+        from worker import Defer, create_worker, current
         
         with self.subTest("resolve"):
             defer = Defer()
@@ -169,6 +169,30 @@ class TestWorker(unittest.TestCase):
                 time.sleep(0.5)
                 defer.resolve("OK")
             self.assertEqual(defer.get(), "OK")
+
+        with self.subTest("resolve after get, enter event loop"):
+            defer = Defer()
+            main = current()
+            a = False
+            b = False
+
+            @create_worker
+            def _():
+                time.sleep(0.5)
+                
+                @main.later
+                def _():
+                    nonlocal a
+                    a = True
+
+                time.sleep(0.5)
+                nonlocal b
+                b = a
+                defer.resolve("OK")
+                
+            self.assertEqual(defer.get(), "OK")
+            self.assertTrue(a)
+            self.assertTrue(b)
             
     def test_event(self):
         from worker import Worker
@@ -301,7 +325,7 @@ class TestWorker(unittest.TestCase):
             a.fire("test")
             a.stop().join()
             self.assertEqual(len(a.listeners.get("test", [])), 2)
-            
+
     def test_default_parent(self):
         """When creating thread in non-main thread, the parent of the created
         thread will be set to current thread.
