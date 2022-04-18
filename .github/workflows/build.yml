@@ -11,7 +11,7 @@ jobs:
           pip install -e .
           pip install -r requirements-lock.txt
           python cute.py test
+          coverage xml
       - uses: codecov/codecov-action@v2
         with:
-          files: ./coverage.xml
           fail_ci_if_error: true
