@@ -19,12 +19,16 @@ disable=
 	no-value-for-parameter,
 	
 	anomalous-backslash-in-string,
+        consider-using-f-string,
 	global-statement,
 	missing-docstring, multiple-imports,
 	no-self-use,
 	redefined-outer-name, redefined-builtin,
 	trailing-whitespace,
-	unused-argument
+	unused-argument,
+    unnecessary-pass,
+    line-too-long,
+    too-many-lines
 
 [REPORTS]
 # reports=yes
@@ -44,7 +48,7 @@ function-rgx=^[a-z][a-z0-9_]{,30}$
 
 [FORMAT]
 no-space-check=trailing-comma,empty-line
-indent-string="\t"
+indent-string="    "
 
 [VARIABLES]
 callbacks=_

@@ -1,4 +1,5 @@
 #! python3
+# pylint: disable=import-outside-toplevel
 
 import unittest
 import gc
@@ -21,11 +22,10 @@ class TestWorker(unittest.TestCase):
                 a = event.data
 
             while True:
+                # breakpoint()
                 sleep(1)
                 a += 1
                 
-        increaser.start()
-        
         with self.subTest("basic"):     
             time.sleep(5.5)
             self.assertEqual(a, 5)
@@ -134,9 +134,17 @@ class TestWorker(unittest.TestCase):
             t = time.time()
             self.assertEqual(pending.get(), "Finished after 1 seconds")
             self.assertAlmostEqual(time.time() - t, 0, 1)
+
+        with self.subTest("async error"):
+            @async_
+            def pending():
+                raise Exception("An error")
+
+            with self.assertRaisesRegex(Exception, "An error"):
+                pending.get()
             
     def test_defer(self):
-        from worker import Defer, create_worker
+        from worker import Defer, create_worker, current
         
         with self.subTest("resolve"):
             defer = Defer()
@@ -169,6 +177,30 @@ class TestWorker(unittest.TestCase):
                 time.sleep(0.5)
                 defer.resolve("OK")
             self.assertEqual(defer.get(), "OK")
+
+        with self.subTest("resolve after get, enter event loop"):
+            defer = Defer()
+            main = current()
+            a = False
+            b = False
+
+            @create_worker
+            def _():
+                time.sleep(0.5)
+                
+                @main.later
+                def _():
+                    nonlocal a
+                    a = True
+
+                time.sleep(0.5)
+                nonlocal b
+                b = a
+                defer.resolve("OK")
+                
+            self.assertEqual(defer.get(), "OK")
+            self.assertTrue(a)
+            self.assertTrue(b)
             
     def test_event(self):
         from worker import Worker
@@ -284,7 +316,7 @@ class TestWorker(unittest.TestCase):
         with self.subTest("one-time listener"):
             a = Worker().start()
             @a.listen("test")
-            def handler(event):
+            def handler(_event):
                 a.unlisten(handler)
             a.fire("test")
             a.stop().join()
@@ -301,7 +333,7 @@ class TestWorker(unittest.TestCase):
             a.fire("test")
             a.stop().join()
             self.assertEqual(len(a.listeners.get("test", [])), 2)
-            
+
     def test_default_parent(self):
         """When creating thread in non-main thread, the parent of the created
         thread will be set to current thread.
@@ -450,6 +482,31 @@ class TestWorker(unittest.TestCase):
         self.assertTrue(a)
         self.assertFalse(thread.is_running())
         thread.join()
+
+    def test_native_thread(self):
+        from worker import sleep
+        from threading import Thread
+        ok = False
+        def target():
+            sleep(1)
+            nonlocal ok
+            ok = True
+        t = Thread(target=target)
+        t.start()
+        t.join()
+        self.assertTrue(ok)
+
+    def test_worker_wait(self):
+        from worker import create_worker, wait_thread, sleep
+        with self.subTest("thread"):
+            @create_worker
+            def target():
+                sleep(100)
+            target.stop()
+            (err, result) = wait_thread(target)
+            self.assertIsNone(result)
+            self.assertIsNone(err)
+
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main

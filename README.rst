@@ -1,18 +1,14 @@
 pyThreadWorker
 ==============
 
-.. image:: https://travis-ci.org/eight04/pyWorker.svg?branch=master
-    :target: https://travis-ci.org/eight04/pyWorker
-    
+.. image:: https://github.com/eight04/pyWorker/actions/workflows/build.yml/badge.svg
+  :target: https://github.com/eight04/pyWorker/actions/workflows/build.yml
+
 .. image:: https://codecov.io/gh/eight04/pyWorker/branch/master/graph/badge.svg
   :target: https://codecov.io/gh/eight04/pyWorker
 
-.. image:: https://api.codacy.com/project/badge/Grade/a95224e5ad8c4e52bd8cde3193aab496
-   :alt: Codacy Badge
-   :target: https://www.codacy.com/app/eight04/pyWorker?utm_source=github.com&utm_medium=referral&utm_content=eight04/pyWorker&utm_campaign=badger
-
-.. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=latest
-  :target: http://pythreadworker.readthedocs.io/en/latest/?badge=latest
+.. image:: https://readthedocs.org/projects/pythreadworker/badge/?version=stable
+  :target: https://pythreadworker.readthedocs.io/en/stable/?badge=stable
   :alt: Documentation Status
 
 A threading library written in python. Help you build threaded app.
@@ -127,7 +123,8 @@ Use Channel to broadcast events:
       print(name, "recieved", event.data)
       
     channel.sub(printer)
-    return printer.start()
+    printer.start()
+    return printer
     
   foo = create_printer("foo")
   bar = create_printer("bar")
@@ -187,6 +184,11 @@ Notes
 
 Changelog
 ---------
+
+* next
+
+  - **Change: require python 3.10+.**
+  - Change: now calling ``wait_*`` functions would initiate a root worker if there is no worker on the current thread.
 
 * 0.9.0 (Jun 8, 2018)
 

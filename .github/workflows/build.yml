@@ -1,0 +1,17 @@
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - run: |
+          pip install -e .
+          pip install -r requirements-lock.txt
+          python cute.py test
+          coverage xml
+      - uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: true

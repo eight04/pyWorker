@@ -3,9 +3,10 @@
 import threading
 from threading import RLock, Lock, Thread
 import traceback, time, weakref
-from contextlib import suppress
+from contextlib import suppress, contextmanager
 from collections import deque
 from functools import wraps
+from typing import Callable
 import queue
 
 __version__ = "0.9.0"
@@ -18,6 +19,14 @@ SHORTCUTS = (
     
     "parent_fire", "children_fire", "bubble", "broadcast"
 )
+
+@contextmanager
+def release_lock(lock):
+    lock.release()
+    try:
+        yield
+    finally:
+        lock.acquire()
 
 class WorkerExit(BaseException):
     """Raise this error to exit the thread."""
@@ -103,7 +112,7 @@ class EventEmitter:
         If ``callback`` is not provided, this method becomes a decorator, so
         you can use it like:
         
-        .. codeblock:: python
+        .. code-block:: python
 
             @thread.listen("EVENT_NAME")
             def handler(event):
@@ -474,7 +483,7 @@ class Worker(EventTree):
             self.ret = self.worker(*args, **kwargs)
         except WorkerExit:
             self.parent_fire("CHILD_THREAD_STOP")
-        except BaseException as err:
+        except BaseException as err: # pylint: disable=broad-except
             self.err = err
             if self.print_traceback:
                 print("Thread crashed: " + self.node_name)
@@ -501,7 +510,7 @@ class Worker(EventTree):
                 break
             except WorkerExit:
                 pass
-            except BaseException:
+            except BaseException: # pylint: disable=broad-except
                 print("Error occured in listener cleanup: " + self.node_name)
                 traceback.print_exc()
                 
@@ -674,13 +683,13 @@ class Async(Worker):
         If the task failed, this method raises an error. If the task is not
         completed, enter the event loop.
         """
-        handle = current()
-        handle.children.add(self)
-        err, ret = handle.wait_thread(self)
-        handle.children.remove(self)
-        if err:
-            raise err
-        return ret
+        with WORKER_POOL.current_worker() as handle:
+            handle.children.add(self)
+            err, ret = handle.wait_thread(self)
+            handle.children.remove(self)
+            if err:
+                raise err
+            return ret
         
 class Defer:
     """Defer object. Handy in cross-thread communication. For example, update
@@ -751,14 +760,16 @@ class Defer:
         raise the result.
         """
         with self.status_lock:
-            if self.status == "PENDING":
-                self.pending.add(current())
-            else:
+            if self.status != "PENDING":
                 return self.get_result()
-        def is_fulfilled(event):
-            return event.name == "DEFER_FULFILL" and event.data is self
-        current().wait_until(is_fulfilled)
-        return self.get_result()
+
+            with WORKER_POOL.current_worker() as worker:
+                def is_fulfilled(event):
+                    return event.name == "DEFER_FULFILL" and event.data is self
+                self.pending.add(worker)
+                with release_lock(self.status_lock):
+                    worker.wait_until(is_fulfilled)
+                return self.get_result()
         
     def get_result(self):
         if self.status == "RESOLVED":
@@ -766,7 +777,12 @@ class Defer:
         raise self.result # pylint: disable=raising-bad-type
                 
 class RootWorker(Worker):
-    """Root worker. Represent main thread.
+    """Root worker, represents a root thread i.e. the main thread, or threads that are not managed by pyThreadWorker.
+
+    It is similar to :meth:`Worker.start_overlay` but the worker instance is created automatically when 
+    ``wait_*`` shortcuts are invoked. The worker instance is dropped when the ``wait_*`` shortcut returns (unless it is the main thread.)
+
+    This makes pyThreadWorker compatible with other threading libraries e.g. asyncio.
     
     RootWorker overwrite some methods so that:
     
@@ -775,7 +791,7 @@ class RootWorker(Worker):
     """
     def __init__(self):
         super().__init__(parent=False)
-        self.thread = threading.main_thread()
+        self.thread = threading.current_thread()
         self.init()
         
     def event_loop(self, *args, **kwargs): # pylint: disable=arguments-differ
@@ -785,13 +801,12 @@ class RootWorker(Worker):
         except WorkerExit:
             self.cleanup_children()
             
-        except BaseException:
+        except BaseException: # pylint: disable=broad-except
             traceback.print_exc()
             
     def exit(self):
         """Suppress exit. However, it still cleanups its children."""
         self.cleanup_children()
-        return
             
 class Pool:
     """Worker pool"""
@@ -803,6 +818,28 @@ class Pool:
         """Return current worker"""
         with self.lock:
             return self.pool[threading.current_thread()][-1]
+
+    @contextmanager
+    def current_worker(self):
+        """A context manager that returns a worker.
+
+        If there is no worker on the current thread, a root worker will be created.
+        Which will be removed after the context exits.
+        """
+        thread = threading.current_thread()
+        is_temporary = False
+        with self.lock:
+            if thread in self.pool:
+                worker = self.pool[thread][-1]
+            else:
+                worker = RootWorker()
+                self.pool[thread] = [worker]
+                is_temporary = True
+        try:
+            yield worker
+        finally:
+            if is_temporary:
+                self.remove(thread)
 
     def add(self, node):
         """Add worker to pool"""
@@ -896,7 +933,8 @@ def sleep(timeout):
     
     :param float timeout: time to wait.
     """
-    return current().wait_timeout(float(timeout))
+    with WORKER_POOL.current_worker() as worker:
+        return worker.wait_timeout(float(timeout))
     
 def callback_deco(f):
     @wraps(f)
@@ -909,31 +947,49 @@ def callback_deco(f):
     return wrapped
     
 @callback_deco
-def async_(callback, *args, **kwargs):
+def async_(callback: Callable, *args, **kwargs) -> Async:
     """Create and start an :class:`Async` task.
         
-    :param callable callback: The task that would be sent to :class:`Async`.
-    :rtype: Async
-    
-    Other arguments are sent to :meth:`Async.start`.
+    ``callback`` will be sent to :class:`Async` and other arguments will be sent to :meth:`Async.start`.
     """
     return Async(callback).start(*args, **kwargs)
 
 @callback_deco
-def await_(callback, *args, **kwargs):
+def await_(callback: Callable, *args, **kwargs) -> any:
     """This is just a shortcut of ``async_(...).get()``, which is used to put
     blocking function into a new thread and enter the event loop.
     """
     return async_(callback, *args, **kwargs).get()
     
 @callback_deco
-def create_worker(callback, *args, parent=None, daemon=None,
-        print_traceback=True, **kwargs):
+def create_worker(
+        callback: Callable,
+        *args,
+        parent: bool | None | Worker = None,
+        daemon: bool | None = None,
+        print_traceback: bool = True,
+        **kwargs) -> Worker:
     """Create and start a :class:`Worker`.
         
     ``callback``, ``parent``, ``daemon``, and ``print_traceback`` are sent to
     :class:`Worker`, other arguments are sent to :meth:`Worker.start`.
     
+    This function can be used as a decorator:
+
+    .. code-block:: python
+
+        def my_task():
+            ...
+        my_thread = create_worker(my_task, daemon=True)
+        # my_thread is running
+        
+        # v.s.
+        
+        @create_worker(daemon=True)
+        def my_thread():
+            ...
+        # my_thread is running
+
     :rtype: Worker
     """
     return Worker(callback, parent=parent, daemon=daemon, 
@@ -941,14 +997,18 @@ def create_worker(callback, *args, parent=None, daemon=None,
             
 # define shortcuts
 def create_shortcut(key):
-    if key != "listen":
-        def shortcut(*args, **kwargs):
-            return getattr(WORKER_POOL.current(), key)(*args, **kwargs)
-    else:
+    if key == "listen":
         def shortcut(*args, **kwargs):
             return getattr(WORKER_POOL.current(), key)(*args, permanent=False, **kwargs)
+    elif key.startswith("wait"):
+        def shortcut(*args, **kwargs):
+            with WORKER_POOL.current_worker() as worker:
+                return getattr(worker, key)(*args, **kwargs)
+    else:
+        def shortcut(*args, **kwargs):
+            return getattr(WORKER_POOL.current(), key)(*args, **kwargs)
     shortcut.__doc__ = (
-        "A shortcut function to ``current().{key}()``."
+        "A shortcut function of ``current().{key}()``."
     ).format(key=key)
     return shortcut
 

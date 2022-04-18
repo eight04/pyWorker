@@ -1,10 +1,7 @@
-[*.py]
+[*]
 indent_style = space
 indent_size = 4
 
-[*.{rst,yml}]
-indent_style = space
+[*.{rst,yml,yaml}]
 indent_size = 2
 
-[docs/**.rst]
-indent_size = 4
