@@ -1,4 +1,5 @@
 #! python3
+# pylint: disable=import-outside-toplevel
 
 import unittest
 import gc
@@ -21,11 +22,10 @@ class TestWorker(unittest.TestCase):
                 a = event.data
 
             while True:
+                # breakpoint()
                 sleep(1)
                 a += 1
                 
-        increaser.start()
-        
         with self.subTest("basic"):     
             time.sleep(5.5)
             self.assertEqual(a, 5)
@@ -284,7 +284,7 @@ class TestWorker(unittest.TestCase):
         with self.subTest("one-time listener"):
             a = Worker().start()
             @a.listen("test")
-            def handler(event):
+            def handler(_event):
                 a.unlisten(handler)
             a.fire("test")
             a.stop().join()
@@ -450,6 +450,19 @@ class TestWorker(unittest.TestCase):
         self.assertTrue(a)
         self.assertFalse(thread.is_running())
         thread.join()
+
+    def test_native_thread(self):
+        from worker import sleep
+        from threading import Thread
+        ok = False
+        def target():
+            sleep(1)
+            nonlocal ok
+            ok = True
+        t = Thread(target=target)
+        t.start()
+        t.join()
+        self.assertTrue(ok)
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main
