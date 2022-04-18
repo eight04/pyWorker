@@ -495,6 +495,18 @@ class TestWorker(unittest.TestCase):
         t.start()
         t.join()
         self.assertTrue(ok)
+
+    def test_worker_wait(self):
+        from worker import create_worker, wait_thread, sleep
+        with self.subTest("thread"):
+            @create_worker
+            def target():
+                sleep(100)
+            target.stop()
+            (err, result) = wait_thread(target)
+            self.assertIsNone(result)
+            self.assertIsNone(err)
+
             
     def tearDown(self):
         from worker import WORKER_POOL, is_main

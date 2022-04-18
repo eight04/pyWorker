@@ -3,7 +3,7 @@
 pyThreadWorker
 ==============
 
-A library which can help you create threaded APP. It adds event queue, parent,
+A library helping you create threaded App. It adds event queue, parent,
 children to each thread.
 
 The document would mention "thread" object multiple times, but it actually
@@ -12,7 +12,7 @@ refers to :class:`Worker` instead of builtin :class:`threading.Thread`.
 Event loop
 ----------
 
-This library implements event loop for each thread. Each thread has its own
+This library implements an event loop for each thread. Each thread has its own
 event queue. With the event loop, we can pause/resume/stop the thread by 
 sending specific events to event queue. For example:
 
@@ -33,9 +33,8 @@ In the previous code:
 
 The event loop does following stuff:
 
-1. Events are processed.
-2. Listeners get called. *Note: you should avoid re-enter the event loop inside
-   a listener*
+1. Process events.
+2. Call listeners.
 3. If there is a "STOP_THREAD" event, :class:`WorkerExit` would be raised.
    *Keep this in mind and carefully add "breakpoints" in your application.*
    
@@ -47,13 +46,16 @@ immediately:
 
 .. code-block:: python
 
-    from worker import Worker
+    from worker import create_worker, wait_forever
     
-    thread = Worker().start()
+    @create_worker
+    def thread():
+      wait_forever()
+
     thread.stop()
     print(thread.is_running()) # true
 
-When ``stop`` is called, an "STOP_THREAD" event is put in thread's event queue,
+When ``stop`` is called, a "STOP_THREAD" event is put in worker's event queue,
 after the thread processing the event, the thread would exit the event loop by
 raising :class:`WorkerExit`.
 
@@ -61,10 +63,14 @@ To wait until the thread exits:
 
 .. code-block:: python
 
-    from worker import Worker, wait_thread
-    
-    thread = Worker().start()
-    wait_thread(thread.stop())
+    from worker import create_worker, wait_forever, wait_thread
+
+    @create_worker
+    def thread():
+      wait_forever()
+
+    thread.stop()
+    wait_thread(thread)
     print(thread.is_running()) # false
       
 Daemon thread
@@ -149,31 +155,14 @@ Functions
 
 .. autofunction:: sleep
 
-Following functions have an optional callback as the first argument. They are
-allowed to be used as a decorator. Take :func:`create_worker` for example:
-
-.. code-block:: python
-
-    def my_task():
-        ...
-    my_thread = create_worker(my_task, daemon=True)
-    # my_thread is running
-    
-    # v.s.
-    
-    @create_worker(daemon=True)
-    def my_thread():
-        ...
-    # my_thread is running
-
 .. autofunction:: create_worker
 
 .. autofunction:: async_
         
 .. autofunction:: await_
 
-Following functions are just shortcuts that would be bound to the current
-thread when called:
+Shortcut functions for the current thread
+-----------------------------------------
 
 .. autofunction:: listen
 
@@ -215,17 +204,13 @@ Classes
         
 .. autoclass:: Worker
     :members: listen, unlisten, fire, update, start, stop, pause, resume, join,
-        is_running, is_daemon, wait, wait_timeout, wait_forever, wait_thread,
+        is_running, is_daemon, wait_timeout, wait_forever, wait_thread,
         wait_event, wait_until, later
             
 .. autoclass:: Async
     :show-inheritance:
     :members: get
             
-.. autoclass:: Later
-    :show-inheritance:
-    :members: cancel
-    
 .. autoclass:: Defer
     :members: resolve, reject, get
     

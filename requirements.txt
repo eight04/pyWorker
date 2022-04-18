@@ -1,8 +1,8 @@
 Pygments<3,>=2.2.0
+Sphinx==4.5.0
 codecov<3,>=2.0.15
 coverage<5,>=4.5.1
 docutils~=0.12
 pylint==2.13.5
 pyxcute==0.6.0
-sphinx-autobuild<0.8,>=0.7.1
 twine<2,>=1.6.5

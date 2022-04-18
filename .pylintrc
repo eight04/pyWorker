@@ -26,7 +26,9 @@ disable=
 	redefined-outer-name, redefined-builtin,
 	trailing-whitespace,
 	unused-argument,
-        unnecessary-pass
+    unnecessary-pass,
+    line-too-long,
+    too-many-lines
 
 [REPORTS]
 # reports=yes

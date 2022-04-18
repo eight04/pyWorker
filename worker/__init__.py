@@ -6,6 +6,7 @@ import traceback, time, weakref
 from contextlib import suppress, contextmanager
 from collections import deque
 from functools import wraps
+from typing import Callable
 import queue
 
 __version__ = "0.9.0"
@@ -111,7 +112,7 @@ class EventEmitter:
         If ``callback`` is not provided, this method becomes a decorator, so
         you can use it like:
         
-        .. codeblock:: python
+        .. code-block:: python
 
             @thread.listen("EVENT_NAME")
             def handler(event):
@@ -776,7 +777,12 @@ class Defer:
         raise self.result # pylint: disable=raising-bad-type
                 
 class RootWorker(Worker):
-    """Root worker. Represent the root thread.
+    """Root worker, represents a root thread i.e. the main thread, or threads that are not managed by pyThreadWorker.
+
+    It is similar to :meth:`Worker.start_overlay` but the worker instance is created automatically when 
+    ``wait_*`` shortcuts are invoked. The worker instance is dropped when the ``wait_*`` shortcut returns (unless it is the main thread.)
+
+    This makes pyThreadWorker compatible with other threading libraries e.g. asyncio.
     
     RootWorker overwrite some methods so that:
     
@@ -941,31 +947,49 @@ def callback_deco(f):
     return wrapped
     
 @callback_deco
-def async_(callback, *args, **kwargs):
+def async_(callback: Callable, *args, **kwargs) -> Async:
     """Create and start an :class:`Async` task.
         
-    :param callable callback: The task that would be sent to :class:`Async`.
-    :rtype: Async
-    
-    Other arguments are sent to :meth:`Async.start`.
+    ``callback`` will be sent to :class:`Async` and other arguments will be sent to :meth:`Async.start`.
     """
     return Async(callback).start(*args, **kwargs)
 
 @callback_deco
-def await_(callback, *args, **kwargs):
+def await_(callback: Callable, *args, **kwargs) -> any:
     """This is just a shortcut of ``async_(...).get()``, which is used to put
     blocking function into a new thread and enter the event loop.
     """
     return async_(callback, *args, **kwargs).get()
     
 @callback_deco
-def create_worker(callback, *args, parent=None, daemon=None,
-        print_traceback=True, **kwargs):
+def create_worker(
+        callback: Callable,
+        *args,
+        parent: bool | None | Worker = None,
+        daemon: bool | None = None,
+        print_traceback: bool = True,
+        **kwargs) -> Worker:
     """Create and start a :class:`Worker`.
         
     ``callback``, ``parent``, ``daemon``, and ``print_traceback`` are sent to
     :class:`Worker`, other arguments are sent to :meth:`Worker.start`.
     
+    This function can be used as a decorator:
+
+    .. code-block:: python
+
+        def my_task():
+            ...
+        my_thread = create_worker(my_task, daemon=True)
+        # my_thread is running
+        
+        # v.s.
+        
+        @create_worker(daemon=True)
+        def my_thread():
+            ...
+        # my_thread is running
+
     :rtype: Worker
     """
     return Worker(callback, parent=parent, daemon=daemon, 
@@ -984,7 +1008,7 @@ def create_shortcut(key):
         def shortcut(*args, **kwargs):
             return getattr(WORKER_POOL.current(), key)(*args, **kwargs)
     shortcut.__doc__ = (
-        "A shortcut function to ``current().{key}()``."
+        "A shortcut function of ``current().{key}()``."
     ).format(key=key)
     return shortcut
 

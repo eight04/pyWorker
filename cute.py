@@ -28,7 +28,8 @@ cute(
         ],
     readme_pre = "readme_build",
     readme = LiveReload("README.rst", "readme_build", "build/readme"),
-    doc = 'sphinx-autobuild -B -z worker docs docs/build',
+    doc_pre = 'sphinx-build docs build/docs',
+    doc = LiveReload(["worker", "docs"], "doc_pre", "build/docs"),
     coverage_pre = ["unit", "coverage html"],
     coverage = LiveReload(["worker", "test.py"], "coverage_pre", "htmlcov")
     )
